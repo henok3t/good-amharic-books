@@ -36,8 +36,10 @@ for b in raw["books"]:
     parts = []
     for p in b["parts"]:
         f = fname(p["url"])
-        parts.append({"label": re.sub(r"^[\s·]+|[\s·]+$", "", p["label"]), "file": None if f in missing else f,
-                      "url": None if f else p["url"], **({"gone": True} if f in missing else {})})
+        # Nothing is ever linked to the old site: a part without a copied file is marked gone.
+        gone = not f or f in missing
+        parts.append({"label": re.sub(r"^[\s·]+|[\s·]+$", "", p["label"]), "file": None if gone else f,
+                      "url": None, **({"gone": True} if gone else {})})
         if f: files.add(f)
     imgs = [fname(u) for u in ([b.get("titleImage")] + b.get("covers", [])) if fname(u)]
     title_img = fname(b.get("titleImage")) or (imgs[0] if imgs else None)
