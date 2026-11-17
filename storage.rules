@@ -1,0 +1,17 @@
+rules_version = '2';
+
+// Private preview: only the Firebase Auth user IDs listed here can read anything.
+// Nobody can write from the browser; files are uploaded with gcloud by the project owner.
+service firebase.storage {
+  match /b/{bucket}/o {
+    function allowed() {
+      return request.auth != null && request.auth.uid in [
+        // ALLOWED_UIDS
+      ];
+    }
+    match /{allPaths=**} {
+      allow read: if allowed();
+      allow write: if false;
+    }
+  }
+}

@@ -1,0 +1,7 @@
+node_modules/
+public/
+# Scraped catalog and mirrored books stay private (this repo is public); they live in Cloud Storage.
+data/
+mirror/
+.firebase/
+*.log
