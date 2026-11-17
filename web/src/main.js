@@ -135,7 +135,7 @@ function bookView(id) {
   frame(`<section class="wrap book">
     <a class="back" href="javascript:history.back()">${t('back')}</a>
     <div class="book-grid">${coverBlock(b)}
-      <div class="book-info">${titleBlock(b, true)}
+      <div class="book-info">${titleBlock(b, true)}${(b.titleAm || b.titleEn) && b.titleImage ? `<div class="title-img orig" data-file="${esc(b.titleImage)}" data-kind="img"></div>` : ''}
         <dl><dt>${t('author')}</dt><dd>${b.author ? `<a href="#/library?q=${encodeURIComponent(b.author)}">${esc(b.author)}</a>` : esc(t('unknownAuthor'))}</dd>
           <dt>${t('category')}</dt><dd><a href="#/library?g=${encodeURIComponent(b.group)}">${groupIcon(b.group)} ${esc(groupName(b.group, lang()))}</a></dd>
           <dt>${t('language')}</dt><dd>${b.langs.map((l) => esc(langName(l, lang()))).join(', ')}</dd></dl>

@@ -185,3 +185,5 @@ html[lang="am"] .prose h1 { font-family: var(--ethi); }
   .book-grid > .cover { position: static; max-width: 240px; }
 }
 .p-gone { color: var(--muted); font-size: 13px; font-style: italic; }
+.title-img.orig { margin: -6px 0 20px; }
+.title-img.orig img { max-height: 60px; opacity: .9; }
