@@ -9,6 +9,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 raw = json.load(open(os.path.join(ROOT, "data/raw_catalog.json")))
 tpath = os.path.join(ROOT, "data/titles.json")
 titles = json.load(open(tpath)) if os.path.exists(tpath) else {}
+mpath = os.path.join(ROOT, "data/missing.txt")
+missing = set(open(mpath).read().split("\n")) if os.path.exists(mpath) else set()  # gone from the old server too
 
 LANGS = [  # (prefix, code)
     ("amh", "am"), ("anh", "am"), ("tig", "ti"), ("eng", "en"), ("gre", "el"), ("geez", "gez"),
@@ -34,7 +36,8 @@ for b in raw["books"]:
     parts = []
     for p in b["parts"]:
         f = fname(p["url"])
-        parts.append({"label": re.sub(r"^[\s·]+|[\s·]+$", "", p["label"]), "file": f, "url": None if f else p["url"]})
+        parts.append({"label": re.sub(r"^[\s·]+|[\s·]+$", "", p["label"]), "file": None if f in missing else f,
+                      "url": None if f else p["url"], **({"gone": True} if f in missing else {})})
         if f: files.add(f)
     imgs = [fname(u) for u in ([b.get("titleImage")] + b.get("covers", [])) if fname(u)]
     title_img = fname(b.get("titleImage")) or (imgs[0] if imgs else None)

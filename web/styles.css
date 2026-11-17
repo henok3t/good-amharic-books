@@ -184,3 +184,4 @@ html[lang="am"] .prose h1 { font-family: var(--ethi); }
   .book-grid { grid-template-columns: 1fr; gap: 24px; }
   .book-grid > .cover { position: static; max-width: 240px; }
 }
+.p-gone { color: var(--muted); font-size: 13px; font-style: italic; }

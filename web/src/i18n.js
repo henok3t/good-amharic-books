@@ -55,6 +55,7 @@ const T = {
   read: ['Read', 'አንብብ'], download: ['Download', 'አውርድ'], listen: ['Listen', 'አዳምጥ'],
   files: ['Files', 'ፋይሎች'], fullBook: ['Full book', 'ሙሉ መጽሐፍ'], part: ['Part {n}', 'ክፍል {n}'],
   notCopied: ['This file hasn’t been copied to the new library yet.', 'ይህ ፋይል ገና ወደ አዲሱ ቤተ መጻሕፍት አልተገለበጠም።'],
+  gone: ['Missing on the original site', 'በዋናው ገጽ ላይ የለም'],
   loading: ['Loading…', 'በመጫን ላይ…'], back: ['← Back', '← ተመለስ'], showMore: ['Show more', 'ተጨማሪ አሳይ'],
   signInTitle: ['Private preview', 'የግል ቅድመ እይታ'],
   signInBody: ['This rebuild of good-amharic-books.com is not public yet. Sign in with an approved Google account to continue.',

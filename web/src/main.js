@@ -144,7 +144,7 @@ function bookView(id) {
           ${p.file ? (isAudio(p.file)
             ? `<span class="p-actions"><button class="btn" data-action="listen" data-file="${esc(p.file)}">▶ ${t('listen')}</button></span><div class="audio-slot"></div>`
             : `<span class="p-actions"><button class="btn primary" data-action="read" data-file="${esc(p.file)}">${t('read')}</button><button class="btn" data-action="download" data-file="${esc(p.file)}" data-name="${esc(p.file)}">↓ ${t('download')}</button></span>`)
-            : `<a class="btn" href="${esc(p.url)}" target="_blank" rel="noopener">↗</a>`}
+            : p.gone ? `<span class="p-gone">${t('gone')}</span>` : `<a class="btn" href="${esc(p.url)}" target="_blank" rel="noopener">↗</a>`}
           <div class="p-error" hidden>${t('notCopied')}</div></li>`).join('')}</ol>
         <p class="note">${t('pdfNote')}</p>
       </div></div>
