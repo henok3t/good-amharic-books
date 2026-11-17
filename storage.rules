@@ -6,6 +6,7 @@ service firebase.storage {
   match /b/{bucket}/o {
     function allowed() {
       return request.auth != null && request.auth.uid in [
+        '0StpKtR7wENUwI5oRVCeGeN3D5d2', // project owner
         // ALLOWED_UIDS
       ];
     }
