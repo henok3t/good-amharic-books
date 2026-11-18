@@ -78,13 +78,15 @@ off (in book 1011 by up to two pages). So transcribe it yourself:
    chapters prefer real `ምዕራፍ` headings (Ethiopic numerals like ፩ ፭ are often misread). The output tells how many entries were
    found as headings in the text; the rest still link to the right page.
 
-Without a printed contents page the builder falls back to the chapter headings it detected.
+Without a printed contents page the builder falls back to the chapter headings it detected. Each contents entry records the
+heading block it points at (`toc[].b`), so the reader jumps to the exact heading; sections whose body heading is worded
+differently are linked to it, and sections with no heading in the body open at the start of their printed page.
 
 ## 5. Proofread against the scans
 
 ```bash
 python3 scripts/make_review_package.py <id> <work>/pdfs <work>/review     # img/NNN.png + txt/NNN.txt per page index
-cp .claude/skills/convert-book/scan-review.md <work>/review/INSTRUCTIONS.md   # fill in the book title at the top
+cp .claude/skills/convert-book/references/scan-review.md <work>/review/INSTRUCTIONS.md   # fill in the book title at the top
 ```
 Split the pages into groups of about 20 and start one helper (Agent tool, general-purpose, background) per group with a short
 prompt: work directory, "read INSTRUCTIONS.md and follow it", its page index range, its output `corr/groupG.json`, and "reply only
@@ -113,7 +115,7 @@ A second pass reads the corrected text as Amharic and fixes what still doesn't m
 python3 scripts/flag_words.py <id> > <work>/flags.json         # rare variants, split words, lone letters, odd marks, digits in words
 python3 scripts/make_review_package.py <id> <work>/pdfs <work>/review2 && cp <work>/flags.json <work>/review2/
 ```
-Start helpers (about 40 pages each) pointing them to `.claude/skills/convert-book/language-review.md` (and `scan-review.md` for the
+Start helpers (about 40 pages each) pointing them to `.claude/skills/convert-book/references/language-review.md` (and `references/scan-review.md` for the
 operation formats), output `corr/langG.json`. Then merge scan and language corrections together, in that order, and rebuild:
 ```bash
 python3 scripts/merge_corrections.py <id> <work>/review/corr <work>/review2/corr/lang0.json … data/corrections/<id>.extra.json
@@ -127,6 +129,8 @@ The flags are hints: in Amharic the last letter's vowel is often grammar (ክር
   `ምዕራፍ ፲፫` before the clean heading (the builder drops those).
 - Leftover junk: `grep` the blocks for `* • ★ ▪ ✓ #` (real footnote asterisks are fine) and for ASCII quotes between Ethiopic words.
 - Page labels run in sequence (gaps are noted, not invented).
+- The reader shows flowing text with its own page numbers (book mode measures chapters for the current screen); printed page
+  numbers must not appear in the reading text — the 📄 button shows the original scan instead.
 - Local preview: `npm run dev` (serves `data/` without sign-in) — open `#/read/<id>`, turn pages in book mode on a phone-sized and a
   desktop window, open the contents, search a word, open an original page. A Playwright script with `devices['iPhone 13']` works well.
 

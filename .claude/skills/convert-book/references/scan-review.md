@@ -1,6 +1,6 @@
 # Proofreading an OCR'd Amharic book against its scans
 
-Book: ዓምደ ሃይማኖት (Pillar of Faith). For each page index NNN you have:
+Book: <TITLE — fill in before handing this to reviewers>. For each page index NNN you have:
 - `img/NNN.png`: the scanned printed page (about 1140x1700 px). Read it at full resolution by cutting it into 3-4 horizontal
   strips with Python/Pillow (save strips under `_strips/`) and viewing each strip with the Read tool.
 - `txt/NNN.txt`: what our OCR pipeline produced: a header line with the page `key`, then numbered blocks
@@ -34,3 +34,5 @@ Prefer a few precise corrections over rewriting whole blocks. Use Unicode Ethiop
 
 Also add one final object {"notes": "..."} summarising anything you could not express (e.g. tables, images, illegible spots).
 Check the JSON parses: python3 -c "import json;print(len(json.load(open('corr/groupG.json'))))"
+Then replay your operations against the txt files (in order) to confirm every `find` matches exactly one block.
+Refer to pages by their page index (NNN) in your notes.
