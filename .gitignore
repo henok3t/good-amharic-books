@@ -5,3 +5,4 @@ data/
 mirror/
 .firebase/
 *.log
+__pycache__/

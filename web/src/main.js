@@ -1,4 +1,6 @@
-import { watchUser, signIn, logOut, loadCatalog, fileUrl } from './firebase.js';
+import { watchUser, signIn, logOut, loadCatalog, fileUrl, loadText, scanUrl } from './firebase.js';
+import { openReader } from './reader.js';
+import { idbGet, idbSet, idbDel, idbKeys, local } from './store.js';
 import { buildIndex, search } from './search.js';
 import { t, lang, setLang, groupName, groupIcon, langName, GROUPS } from './i18n.js';
 
@@ -25,8 +27,9 @@ function header() {
   const u = state.user;
   return `<header class="top">
     <a class="brand" href="#/"><span class="mark">መ</span><span class="brand-text"><b>${t('siteName')}</b><small>${lang() === 'am' ? 'Good Amharic Books' : 'መልካም የአማርኛ መጻሕፍት'}</small></span></a>
-    <nav>${nav('#/', 'home', r === '')}${nav('#/library', 'library', r === 'library' || r === 'book')}${nav('#/about', 'about', r === 'about')}</nav>
+    <nav>${nav('#/', 'home', r === '')}${nav('#/library', 'library', r === 'library' || r === 'book')}${nav('#/reading', 'reading', r === 'reading')}${nav('#/about', 'about', r === 'about')}</nav>
     <div class="top-actions">
+      ${installPrompt ? `<button class="btn install" data-action="install">⤓ ${t('install')}</button>` : ''}
       <div class="lang-toggle" role="group" aria-label="Language">
         <button data-lang="en" class="${lang() === 'en' ? 'on' : ''}">EN</button><button data-lang="am" class="${lang() === 'am' ? 'on' : ''}">አማ</button>
       </div>
@@ -36,7 +39,12 @@ function header() {
 }
 const footer = () => `<footer class="foot"><span>${t('aboutPreview')}</span><a href="#/about">${t('about')}</a></footer>`;
 
-function frame(body) { app.innerHTML = `${header()}<main>${body}</main>${footer()}`; observeFiles(); }
+function tabbar() {
+  const r = route().parts[0] || '';
+  const tab = (href, icon, key, on) => `<a href="${href}" class="${on ? 'on' : ''}"><span class="ti">${icon}</span><span>${t(key)}</span></a>`;
+  return `<nav class="tabbar">${tab('#/', '⌂', 'home', r === '')}${tab('#/library', '⌕', 'library', r === 'library' || r === 'book')}${tab('#/reading', '📖', 'reading', r === 'reading')}${tab('#/about', 'ⓘ', 'about', r === 'about')}</nav>`;
+}
+function frame(body) { app.innerHTML = `${header()}<main>${body}</main>${footer()}${tabbar()}`; observeFiles(); }
 
 // ---------- pieces ----------
 function titleBlock(b, big = false) {
@@ -55,7 +63,7 @@ function coverBlock(b) {
 }
 
 function card(b) {
-  return `<a class="card" href="#/book/${b.id}">${coverBlock(b)}<div class="meta">${titleBlock(b)}
+  return `<a class="card" href="#/book/${b.id}">${coverBlock(b)}${b.hasText ? `<span class="badge-text">${t('readable')}</span>` : ''}<div class="meta">${titleBlock(b)}
     <div class="author">${esc(b.author || t('unknownAuthor'))}</div>
     <div class="chips"><span>${esc(groupName(b.group, lang()))}</span>${b.langs.slice(0, 2).map((l) => `<span class="lang">${esc(langName(l, lang()))}</span>`).join('')}</div></div></a>`;
 }
@@ -101,7 +109,7 @@ function libraryView(params) {
         <select data-filter="l"><option value="">${t('allLanguages')}</option>${langs.map((x) => `<option value="${x}" ${x === l ? 'selected' : ''}>${esc(langName(x, lang()))}</option>`).join('')}</select>
         <select data-filter="s"><option value="">${t('sortRelevance')}</option><option value="title" ${s === 'title' ? 'selected' : ''}>${t('sortTitle')}</option><option value="author" ${s === 'author' ? 'selected' : ''}>${t('sortAuthor')}</option></select>
       </div></div>
-    <div class="chip-row">${sortedGroups.map((x) => `<button data-group="${esc(x.name)}" class="${x.name === g ? 'on' : ''}">${groupIcon(x.name)} ${esc(groupName(x.name, lang()))}</button>`).join('')}</div>
+    <div class="chip-row"><button data-readable class="${params.get('t') ? 'on' : ''}">📖 ${t('readableText')}</button>${sortedGroups.map((x) => `<button data-group="${esc(x.name)}" class="${x.name === g ? 'on' : ''}">${groupIcon(x.name)} ${esc(groupName(x.name, lang()))}</button>`).join('')}</div>
     <div id="results"></div></section>`);
   renderResults(PAGE);
 }
@@ -112,6 +120,7 @@ function currentResults() {
   let rows = search(state.index, q).map((r) => r.book);
   if (g) rows = rows.filter((b) => b.group === g);
   if (l) rows = rows.filter((b) => b.langs.includes(l));
+  if (p.get('t')) rows = rows.filter((b) => b.hasText);
   const key = (b) => (s === 'author' ? b.author : (b.titleAm || b.titleEn || `~${String(b.id).padStart(5, '0')}`)) || '~';
   if (s || !q) rows = [...rows].sort((a, b) => key(a).localeCompare(key(b), lang()) || a.id - b.id);
   return rows;
@@ -139,7 +148,8 @@ function bookView(id) {
         <dl><dt>${t('author')}</dt><dd>${b.author ? `<a href="#/library?q=${encodeURIComponent(b.author)}">${esc(b.author)}</a>` : esc(t('unknownAuthor'))}</dd>
           <dt>${t('category')}</dt><dd><a href="#/library?g=${encodeURIComponent(b.group)}">${groupIcon(b.group)} ${esc(groupName(b.group, lang()))}</a></dd>
           <dt>${t('language')}</dt><dd>${b.langs.map((l) => esc(langName(l, lang()))).join(', ')}</dd></dl>
-        <h3>${t('files')} <small>(${b.parts.length})</small></h3>
+        ${b.hasText ? readCta(b) : ''}
+        <h3>${b.hasText ? t('originalScans') : t('files')} <small>(${b.parts.length})</small></h3>
         <ol class="parts">${b.parts.map((p, i) => `<li><span class="p-label">${esc(partLabel(p, i))}</span>
           ${p.file ? (isAudio(p.file)
             ? `<span class="p-actions"><button class="btn" data-action="listen" data-file="${esc(p.file)}">▶ ${t('listen')}</button></span><div class="audio-slot"></div>`
@@ -151,6 +161,54 @@ function bookView(id) {
     ${related.length ? `<div class="section-head"><h2>${esc(groupName(b.group, lang()))}</h2><a href="#/library?g=${encodeURIComponent(b.group)}">${t('allBooks')} →</a></div><div class="grid">${related.map(card).join('')}</div>` : ''}
   </section>`);
 }
+
+function readCta(b) {
+  const pr = local.get(`gab-progress-${b.id}`, null);
+  return `<div class="read-cta"><a class="btn primary big" href="#/read/${b.id}">📖 ${pr ? t('continueAt', { p: pr.label, pct: pr.pct }) : t('readNow')}</a>
+    <span class="read-note">${t('readNote')}</span>${pr ? `<div class="progress"><i style="width:${pr.pct}%"></i></div>` : ''}</div>`;
+}
+
+async function readingView() {
+  const recent = local.get('gab-recent', []).map((id) => state.byId.get(id)).filter(Boolean);
+  const offline = new Set((await idbKeys()).filter((k) => String(k).startsWith('text:')).map((k) => Number(String(k).slice(5))));
+  const readable = state.catalog.books.filter((b) => b.hasText);
+  const row = (b) => {
+    const pr = local.get(`gab-progress-${b.id}`, null);
+    return `<a class="reading-row" href="#/read/${b.id}">${coverBlock(b)}<div class="meta">${titleBlock(b)}<div class="author">${esc(b.author || '')}</div>
+      ${pr ? `<div class="progress"><i style="width:${pr.pct}%"></i></div><small>${t('pageOf', { p: pr.label, pct: pr.pct })}</small>` : `<small>${t('notStarted')}</small>`}
+      ${offline.has(b.id) ? `<small class="offline-tag">✓ ${t('offlineReady')}</small>` : ''}</div></a>`;
+  };
+  if (route().parts[0] !== 'reading') return;
+  frame(`<section class="wrap reading">
+    <h1>${t('reading')}</h1>
+    ${recent.length ? `<h2>${t('continueReading')}</h2><div class="reading-list">${recent.map(row).join('')}</div>` : `<p class="muted">${t('noReading')}</p>`}
+    <h2>${t('readableBooks')} <small>(${readable.length})</small></h2>
+    <div class="reading-list">${readable.map(row).join('')}</div>
+    <div class="notice">${t('readableSoon')}</div>
+    ${isIos() && !standalone() ? `<div class="notice ios">📲 ${t('iosInstall')}</div>` : ''}
+  </section>`);
+}
+
+let readerHandle;
+async function readerView(id) {
+  const b = state.byId.get(Number(id));
+  if (!b || !b.hasText) return go(`#/book/${id}`, true), render();
+  app.innerHTML = `<div class="boot"><div class="spinner"></div></div>`;
+  let text = await idbGet(`text:${b.id}`);
+  const wasOffline = Boolean(text);
+  try { if (!text || navigator.onLine) { const fresh = await loadText(b.id); text = fresh; if (wasOffline) idbSet(`text:${b.id}`, fresh); } }
+  catch (e) { if (!text) { app.innerHTML = `<div class="boot"><p>${esc(t('textUnavailable'))}</p><a class="btn" href="#/book/${b.id}">${t('back')}</a></div>`; return; } }
+  if (route().parts[0] !== 'read' || route().parts[1] !== String(b.id)) return;
+  let saved = wasOffline;
+  readerHandle = openReader(app, {
+    book: b, text, lang: lang(), scanUrl,
+    offline: { has: () => saved, save: async () => { await idbSet(`text:${b.id}`, text); saved = true; }, remove: async () => { await idbDel(`text:${b.id}`); saved = false; } },
+    onExit: () => { readerHandle = null; history.length > 1 ? history.back() : go(`#/book/${b.id}`); },
+  });
+}
+
+const isIos = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const standalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone;
 
 function aboutView() {
   frame(`<section class="wrap prose"><h1>${t('aboutTitle')}</h1><p>${t('aboutBody')}</p>
@@ -175,7 +233,10 @@ function render() {
   if (!state.catalog) return gateView('loading');
   const { parts, params } = route();
   document.title = `${t('siteName')}`;
-  if (parts[0] === 'library') libraryView(params);
+  if (parts[0] !== 'read' && readerHandle) { readerHandle.cleanup(); readerHandle = null; }
+  if (parts[0] === 'read') return readerView(parts[1]);
+  if (parts[0] === 'reading') readingView();
+  else if (parts[0] === 'library') libraryView(params);
   else if (parts[0] === 'book') bookView(parts[1]);
   else if (parts[0] === 'about') aboutView();
   else homeView();
@@ -240,6 +301,10 @@ app.addEventListener('submit', (e) => {
 app.addEventListener('click', async (e) => {
   const b = e.target.closest('button'); if (!b) return;
   if (b.dataset.lang) { setLang(b.dataset.lang); return render(); }
+  if (b.dataset.readable !== undefined) {
+    b.classList.toggle('on'); return setParam('t', b.classList.contains('on') ? '1' : '');
+  }
+  if (b.dataset.action === 'install' && installPrompt) { installPrompt.prompt(); installPrompt = null; return render(); }
   if (b.dataset.group !== undefined) {
     const on = !b.classList.contains('on');
     app.querySelectorAll('[data-group]').forEach((x) => x.classList.toggle('on', on && x === b));
@@ -256,6 +321,10 @@ app.addEventListener('click', async (e) => {
 });
 window.addEventListener('hashchange', render);
 
+let installPrompt = null;
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installPrompt = e; if (state.catalog && route().parts[0] !== 'read') render(); });
+if (!__DEV__ && 'serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+
 function useCatalog(c) {
   state.catalog = c; state.index = buildIndex(c.books); state.byId = new Map(c.books.map((b) => [b.id, b]));
 }
@@ -268,7 +337,9 @@ if (__DEV__) {
     state.user = user; state.denied = false; state.catalog = null;
     if (!user) return render();
     render();
-    try { useCatalog(await loadCatalog()); } catch (err) {
+    try { const c = await loadCatalog(); useCatalog(c); idbSet('catalog', c); } catch (err) {
+      const cached = await idbGet('catalog');
+      if (cached && (!navigator.onLine || err.code === 'storage/retry-limit-exceeded' || err.code === 'storage/unknown')) { useCatalog(cached); return render(); }
       if (err.code === 'storage/unauthorized' || err.code === 'storage/unauthenticated') state.denied = true;
       else state.error = err.code || String(err);
     }

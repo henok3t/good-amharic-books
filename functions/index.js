@@ -44,3 +44,25 @@ export const mirrorBatch = onMessagePublished(
     await bucket.file(`mirror-report/${batch}.json`).save(JSON.stringify(results), { contentType: 'application/json' });
   },
 );
+
+// Counts pages of PDFs already in the bucket (for OCR cost estimates).
+// Topic "count-batch": { "batch": "c0001", "files": ["a.pdf", ...] } -> page-report/<batch>.json
+import { PDFDocument } from 'pdf-lib';
+export const countPages = onMessagePublished(
+  { topic: 'count-batch', region: 'us-central1', timeoutSeconds: 540, memory: '2GiB', maxInstances: 6, concurrency: 1 },
+  async (event) => {
+    const { batch, files } = event.data.message.json;
+    const bucket = getStorage().bucket();
+    const results = [];
+    for (const name of files) {
+      try {
+        const [buf] = await bucket.file(`files/${name}`).download();
+        let pages;
+        try { pages = (await PDFDocument.load(buf, { ignoreEncryption: true, updateMetadata: false })).getPageCount(); }
+        catch { pages = (buf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []).length; }
+        results.push({ name, pages, bytes: buf.length });
+      } catch (e) { results.push({ name, error: String(e) }); }
+    }
+    await bucket.file(`page-report/${batch}.json`).save(JSON.stringify(results), { contentType: 'application/json' });
+  },
+);

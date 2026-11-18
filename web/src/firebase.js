@@ -38,8 +38,16 @@ function pump() {
       .finally(() => { active--; pump(); });
   }
 }
-export function fileUrl(name) {
-  const path = `files/${name}`;
+export function fileUrl(name) { return storageUrl(`files/${name}`); }
+export function scanUrl(file, page) {
+  if (__DEV__) return Promise.resolve(`/dev/scans/${file.replace(/\.[^.]+$/, '')}/${page}.webp`);
+  return storageUrl(`scans/${file.replace(/\.[^.]+$/, '')}/${page}.webp`); }
+export async function loadText(id) {
+  if (__DEV__) return (await fetch(`/dev/text/${id}.json`)).json();
+  const bytes = await getBytes(ref(storage, `text/${id}.json`));
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+export function storageUrl(path) {
   if (!cache.has(path)) {
     cache.set(path, new Promise((resolve, reject) => { queue.push({ path, resolve, reject }); pump(); }));
     cache.get(path).catch(() => cache.delete(path));

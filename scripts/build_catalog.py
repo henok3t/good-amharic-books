@@ -55,6 +55,7 @@ for b in raw["books"]:
         "category": b["category"], "group": group(b["category"]),
         "titleImage": title_img, "cover": covers[0] if covers else None,
         "parts": parts, "keywords": slug,
+        **({"hasText": True} if os.path.exists(os.path.join(ROOT, f"data/text/{b['id']}.json")) else {}),
     })
 
 cats = {}
