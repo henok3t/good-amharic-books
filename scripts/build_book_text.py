@@ -266,10 +266,11 @@ def apply_corrections(pages, book_id):
     path = os.path.join(ROOT, f'data/corrections/{book_id}.json')
     if not os.path.exists(path): return 0
     by_key = {f"{p['src']['file']}:{p['src']['page']}:{p['src']['half']}": p for p in pages}
-    done = 0
+    done, failed = 0, []
     for c in json.load(open(path)):
+        if 'op' not in c: continue
         p = by_key.get(c['page'])
-        if not p: continue
+        if not p: failed.append(c); continue
         bl = p['blocks']
         find = c.get('find', '')
         k = next((i for i, b in enumerate(bl) if find and find in b['x']), None)
@@ -286,6 +287,9 @@ def apply_corrections(pages, book_id):
             bl.insert(at, {'t': c['t'], 'x': c['x']}); done += 1
         elif op == 'noncont' and bl: bl[0].pop('cont', None); bl[0]['nocont'] = True; done += 1
         elif op == 'cont' and bl: bl[0]['forcecont'] = True; done += 1
+        else: failed.append(c)
+    if failed:
+        json.dump(failed, open(os.path.join(ROOT, f'data/corrections/{book_id}.failed.json'), 'w'), ensure_ascii=False, indent=1)
     return done
 
 # ---------- clean contents (transcribed from the printed contents pages) ----------
@@ -317,10 +321,13 @@ def use_clean_contents(pages, toc, book_id, first_body):
         title = (f"ምዕራፍ {e['num']} · " if e['level'] == 1 and e.get('num') else (e['num'] + ' ' if e.get('num') else '')) + e['title']
         want = fold(e['title']); guess = max(near(e['page']), last)
         best = (0, None, None, None)
-        for i in range(max(first_body, guess - 4), min(len(pages), guess + 5)):
+        window = range(max(first_body, guess - 4), min(len(pages), guess + 5))
+        chapter_heads = e['level'] == 1 and e.get('num') and any(b['t'] == 'h1' and b['x'].startswith('ምዕራፍ') for i in window if i >= last for b in pages[i]['blocks'])
+        for i in window:
             if i < last: continue
             for k, b in enumerate(pages[i]['blocks']):
                 if b['t'] in ('toc', 'c'): continue
+                if chapter_heads and not (b['t'] == 'h1' and b['x'].startswith('ምዕራፍ')): continue   # chapters: real chapter headings only
                 head = fold(b['x'][:len(e['title']) + 30])
                 if e['level'] == 1 and b['t'] == 'h1':           # chapters come in order: any chapter heading nearby, number preferred
                     nums = {e.get('num', '-'), eth_num(e.get('num', ''))}
@@ -333,7 +340,10 @@ def use_clean_contents(pages, toc, book_id, first_body):
         if b is not None and score >= 78:
             if e['level'] == 1:
                 if b['t'] != 'h1' and len(b['x']) > len(e['title']) + 30: pages[i]['blocks'].insert(k, {'t': 'h1', 'x': title})
-                else: b['t'] = 'h1'; b['x'] = title
+                else:
+                    b['t'] = 'h1'; b['x'] = title
+                    nxt = pages[i]['blocks'][k + 1] if k + 1 < len(pages[i]['blocks']) else None
+                    if nxt and nxt['t'] in ('p', 'h2', 'c') and fold(nxt['x']) == want: pages[i]['blocks'].pop(k + 1)   # title line repeated under the heading
             else:
                 al = fuzz.partial_ratio_alignment(want, fold(b['x']))
                 if b['t'] == 'h2' or len(fold(b['x'])) <= len(want) + 12:
@@ -351,6 +361,13 @@ def use_clean_contents(pages, toc, book_id, first_body):
         else:
             idx = max(near(e['page']), last)
             out.append({'title': title, 'level': e['level'], 'page': idx}); last = idx
+    # headings marked during proofreading that the printed contents doesn't list (e.g. the bibliography)
+    listed = {(t['page'], t['title']) for t in out}
+    for i, p in enumerate(pages):
+        for b in p['blocks']:
+            if b['t'] == 'h1' and i >= first_body and (i, b['x']) not in listed and not re.fullmatch(r'ምዕራፍ\s*\S{1,3}\s*[·፥:፡]?\s*', b['x']):
+                out.append({'title': b['x'], 'level': 1, 'page': i})
+    out.sort(key=lambda t: t['page'])
     # a bare "ምዕራፍ ፲፫" left in front of the clean chapter heading (its number misread) is a duplicate
     titles = {t['title'] for t in out}
     for p in pages:
