@@ -10,7 +10,7 @@ const FONTS = {
   abyssinica: ["'Abyssinica SIL'", 'Abyssinica', 'አቢሲኒካ'],
 };
 const THEMES = ['light', 'sepia', 'dark'];
-const DEFAULTS = { size: 2, spacing: 1, font: 'serif', theme: 'sepia', width: 'normal', justify: false };
+const DEFAULTS = { size: 2, spacing: 1, font: 'serif', theme: 'sepia', width: 'normal', justify: false, mode: 'book' };
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -21,14 +21,16 @@ const L = {
     light: 'Light', sepia: 'Sepia', dark: 'Dark', narrow: 'Narrow', normal: 'Normal', wide: 'Wide', back: 'Back',
     offline: 'Available offline', download: 'Download for offline reading', downloading: 'Saving…', removeOffline: 'Remove offline copy',
     ocrNote: 'Converted from a scanned book by OCR. Some words may be misread — tap a page number to compare with the original.',
-    pdf: 'Download as PDF (text edition)', fullSpread: 'Show both pages', openImage: 'Open image', close: 'Close', of: 'of' },
+    pdf: 'Download as PDF (text edition)', fullSpread: 'Show both pages', mode: 'Layout', book: 'Book (turn pages)', scroll: 'Scroll',
+    tapHint: 'Tap the edges or swipe to turn the page', openImage: 'Open image', close: 'Close', of: 'of' },
   am: { contents: 'ማውጫ', bookmarks: 'ምልክቶች', search: 'በዚህ መጽሐፍ ውስጥ ፈልግ', settings: 'የንባብ ቅንብሮች', page: 'ገጽ',
     original: 'ዋናው ገጽ', noBookmarks: 'እስካሁን ምልክት የለም። ያሉበትን ገጽ ለማስቀመጥ ☆ን ይንኩ።', results: '{n} ውጤቶች',
     noResults: 'ምንም አልተገኘም።', size: 'የፊደል መጠን', spacing: 'የመስመር ክፍተት', font: 'ፊደል', theme: 'ገጽታ', width: 'ስፋት', justify: 'ጽሑፉን አስተካክል',
     light: 'ብሩህ', sepia: 'ሴፒያ', dark: 'ጨለማ', narrow: 'ጠባብ', normal: 'መደበኛ', wide: 'ሰፊ', back: 'ተመለስ',
     offline: 'ያለ ኢንተርኔት ይገኛል', download: 'ያለ ኢንተርኔት ለማንበብ አውርድ', downloading: 'በማስቀመጥ ላይ…', removeOffline: 'የተቀመጠውን ቅጂ አጥፋ',
     ocrNote: 'ከተቃኘ መጽሐፍ በOCR የተቀየረ ነው። አንዳንድ ቃላት በስህተት ሊነበቡ ይችላሉ — ከዋናው ጋር ለማነጻጸር የገጽ ቁጥሩን ይንኩ።',
-    pdf: 'እንደ PDF አውርድ (የጽሑፍ እትም)', fullSpread: 'ሁለቱንም ገጾች አሳይ', openImage: 'ምስሉን ክፈት', close: 'ዝጋ', of: 'ከ' },
+    pdf: 'እንደ PDF አውርድ (የጽሑፍ እትም)', fullSpread: 'ሁለቱንም ገጾች አሳይ', mode: 'አቀማመጥ', book: 'መጽሐፍ (ገጽ መግለጥ)', scroll: 'ማሸብለል',
+    tapHint: 'ገጽ ለመግለጥ ጠርዙን ይንኩ ወይም ያንሸራትቱ', openImage: 'ምስሉን ክፈት', close: 'ዝጋ', of: 'ከ' },
 };
 
 export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onExit }) {
@@ -50,6 +52,8 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
     if (b.t === 'h1') return `<h2 class="r-h1">${x}</h2>`;
     if (b.t === 'h2') return `<h3 class="r-h2">${x}</h3>`;
     if (b.t === 'pre') return `<pre class="r-pre">${x}</pre>`;
+    if (b.t === 'toc') return `<nav class="r-tocblock"><ol>${text.toc.map((t) => `<li class="lvl${t.level}"><button data-go="${t.page}"><span>${esc(t.title)}</span><small>${esc(pageLabel(t.page))}</small></button></li>`).join('')}</ol></nav>`;
+    if (b.t === 'c') return `<p class="r-c">${x}</p>`;
     return `<p class="${b.cont ? 'cont' : ''}">${x}</p>`;
   }
   const pageHtml = (p, i, marks) => `<section class="r-page" data-i="${i}" id="rp-${i}">
@@ -69,6 +73,7 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
       <p class="r-note">ⓘ ${esc(tr('ocrNote'))}</p>
       ${pages.map((p, i) => pageHtml(p, i)).join('')}
     </article></main>
+    <div class="r-book" hidden><div class="r-sheet"><div class="r-cols r-text"></div></div><p class="r-hint">${esc(tr('tapHint'))}</p></div>
     <footer class="r-bottom">
       <input type="range" min="0" max="${pages.length - 1}" value="${current}" aria-label="${esc(tr('page'))}">
       <span class="r-pos"></span>
@@ -79,6 +84,7 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
 
   const el = root.querySelector('.reader'), body = el.querySelector('.r-body'), range = el.querySelector('input[type=range]');
   const pos = el.querySelector('.r-pos'), panelEl = el.querySelector('.r-panel'), scrim = el.querySelector('.r-scrim');
+  const bookEl = el.querySelector('.r-book'), sheet = el.querySelector('.r-sheet'), cols = el.querySelector('.r-cols');
 
   function applyPrefs() {
     el.dataset.theme = prefs.theme;
@@ -87,6 +93,8 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
     el.style.setProperty('--r-font', FONTS[prefs.font][0]);
     el.style.setProperty('--r-width', { narrow: '34em', normal: '40em', wide: '52em' }[prefs.width]);
     el.classList.toggle('justify', prefs.justify);
+    el.classList.toggle('book', prefs.mode === 'book');
+    body.hidden = prefs.mode === 'book'; bookEl.hidden = prefs.mode !== 'book';
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', { light: '#ffffff', sepia: '#f4ecd8', dark: '#141414' }[prefs.theme]);
     local.set('gab-reader', prefs);
   }
@@ -105,10 +113,89 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
   let jumping = 0;
   function goTo(i, smooth = false) {
     current = Math.max(0, Math.min(pages.length - 1, i));
+    if (prefs.mode === 'book') { bookShowPage(current); updatePos(); saveProgress(); return; }
     jumping = Date.now(); el.classList.remove('immersive');
     document.getElementById(`rp-${current}`)?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'start' });
     updatePos(); saveProgress();
   }
+
+  // ---------- book mode: chapters set in columns, one column per page (two on wide screens) ----------
+  const chapterStarts = [...new Set([0, ...text.toc.filter((t) => t.level === 1).map((t) => t.page)])].sort((a, b) => a - b);
+  if (chapterStarts.length < 2) for (let k = 12; k < pages.length; k += 12) chapterStarts.push(k);
+  const chapterOf = (i) => chapterStarts.reduce((a, s, k) => (s <= i ? k : a), 0);
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let chap = -1, col = 0, ncols = 1, perView = 1, step = 1, padX = 22, flipping = false;
+  function metrics() {
+    const w = sheet.clientWidth, h = sheet.clientHeight;
+    perView = w >= 980 ? 2 : 1;
+    padX = perView === 2 ? 44 : Math.max(18, Math.round(w * 0.06));
+    const colW = (w - 2 * padX * perView) / perView;
+    step = w / perView;
+    Object.assign(cols.style, { height: `${h}px`, width: `${w}px`, padding: `0 ${padX}px`, columnWidth: `${colW}px`, columnGap: `${2 * padX}px` });
+    sheet.classList.toggle('spread', perView === 2);
+  }
+  function renderChapter(k, marks) {
+    chap = k;
+    const a = chapterStarts[k], b = chapterStarts[k + 1] ?? pages.length;
+    cols.innerHTML = (k === 0 ? `<p class="r-note">ⓘ ${esc(tr('ocrNote'))}</p>` : '')
+      + pages.slice(a, b).map((p, j) => pageHtml(p, a + j, marks && marks.page === a + j ? marks.word : null)).join('')
+      + (b === pages.length ? '<p class="r-end">❖ ❖ ❖</p>' : '');
+    metrics();
+    ncols = Math.max(1, Math.round((cols.scrollWidth - 2 * padX + 2 * padX) / step));
+  }
+  const colOf = (node) => Math.max(0, Math.floor((node.offsetLeft - padX + 2) / step));
+  function setCol(c) {
+    col = Math.max(0, Math.min(c - (c % perView), Math.max(0, ncols - 1)));
+    cols.style.transform = `translateX(${-col * step}px)`;
+    // the source page whose text is showing at the top of the view
+    let at = chapterStarts[chap];
+    cols.querySelectorAll('.r-page').forEach((sec) => { if (colOf(sec) <= col) at = Number(sec.dataset.i); });
+    current = at; updatePos(); saveProgress();
+  }
+  function bookShowPage(i, marks) {
+    const k = chapterOf(i);
+    if (k !== chap || marks) renderChapter(k, marks);
+    const target = marks ? cols.querySelector('mark') : document.getElementById(`rp-${i}`);
+    setCol(target ? colOf(target) : 0);
+  }
+  function flip(dir) {
+    if (flipping) return;
+    const lastView = col + perView >= ncols, firstView = col === 0;
+    if (dir > 0 && lastView && chap >= chapterStarts.length - 1) return;
+    if (dir < 0 && firstView && chap === 0) return;
+    const snap = cols.cloneNode(true);
+    const w = sheet.clientWidth;
+    const turn = document.createElement('div');
+    const half = perView === 2;
+    turn.className = `r-turn ${dir > 0 ? 'fwd' : 'back'}`;
+    Object.assign(turn.style, half ? { left: dir > 0 ? `${w / 2}px` : '0px', width: `${w / 2}px` } : { left: '0px', width: `${w}px` });
+    snap.style.transform = `translateX(${-col * step - (half && dir > 0 ? w / 2 : 0)}px)`;
+    turn.appendChild(snap); turn.insertAdjacentHTML('beforeend', '<i class="r-shade"></i>');
+    // move the real pages underneath
+    if (dir > 0) { if (lastView) { renderChapter(chap + 1); setCol(0); } else setCol(col + perView); }
+    else if (firstView) { renderChapter(chap - 1); setCol(ncols - 1); } else setCol(col - perView);
+    if (reduceMotion) return;
+    flipping = true; sheet.appendChild(turn);
+    const anim = turn.animate([{ transform: 'rotateY(0deg)' }, { transform: `rotateY(${dir > 0 ? -180 : 180}deg)` }],
+      { duration: 620, easing: 'cubic-bezier(.45,.05,.35,1)' });
+    turn.querySelector('.r-shade').animate([{ opacity: 0 }, { opacity: 0.55 }], { duration: 620, easing: 'ease-in' });
+    anim.onfinish = anim.oncancel = () => { turn.remove(); flipping = false; };
+  }
+  // taps on the edges and swipes turn pages; a tap in the middle shows or hides the bars
+  let down = null;
+  bookEl.addEventListener('pointerdown', (e) => { down = { x: e.clientX, y: e.clientY, t: Date.now() }; });
+  bookEl.addEventListener('pointerup', (e) => {
+    if (!down || e.target.closest('button, a')) { down = null; return; }
+    const dx = e.clientX - down.x, dy = e.clientY - down.y; const r = bookEl.getBoundingClientRect(); down = null;
+    if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy)) { flip(dx < 0 ? 1 : -1); return; }
+    if (Math.abs(dx) > 10 || Math.abs(dy) > 10 || String(getSelection()).length) return;
+    const x = (e.clientX - r.left) / r.width;
+    if (x > 0.68) flip(1); else if (x < 0.32) flip(-1); else el.classList.toggle('immersive');
+  });
+  bookEl.addEventListener('wheel', (e) => { if (Math.abs(e.deltaX) > 30 || Math.abs(e.deltaY) > 40) { e.preventDefault(); flip((e.deltaX || e.deltaY) > 0 ? 1 : -1); } }, { passive: false });
+  let resizeT;
+  const onResize = () => { clearTimeout(resizeT); resizeT = setTimeout(() => { if (prefs.mode === 'book') { const keep = current; renderChapter(chapterOf(keep)); bookShowPage(keep); } }, 150); };
+  window.addEventListener('resize', onResize);
 
   // Track the page being read.
   const io = new IntersectionObserver((entries) => {
@@ -203,6 +290,7 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
     return html.replace(re, (m) => `<mark>${m}</mark>`);
   }
   function showHit(h) {
+    if (prefs.mode === 'book') { closePanel(); bookShowPage(h.page, { page: h.page, word: esc(h.text.slice(h.at, h.at + h.len)) }); return; }
     const sec = document.getElementById(`rp-${h.page}`);
     el.querySelectorAll('.r-page mark').forEach((m) => m.replaceWith(m.textContent));
     const word = h.text.slice(h.at, h.at + h.len);
@@ -217,6 +305,7 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
     const opt = (key, values, label) => `<div class="rp-row"><span>${esc(tr(label))}</span><div class="seg">${values.map(([v, txt]) =>
       `<button data-pref="${key}" data-val="${v}" class="${String(prefs[key]) === String(v) ? 'on' : ''}">${txt}</button>`).join('')}</div></div>`;
     panelEl.innerHTML = `${panelHead(tr('settings'))}
+      ${opt('mode', [['book', '📖 ' + esc(tr('book'))], ['scroll', '↕ ' + esc(tr('scroll'))]], 'mode')}
       <div class="rp-row"><span>${esc(tr('size'))}</span><div class="seg"><button data-step="size" data-d="-1">A−</button><b>${SIZES[prefs.size]}</b><button data-step="size" data-d="1">A+</button></div></div>
       ${opt('spacing', SPACING.map((v, k) => [k, `${v}`]), 'spacing')}
       ${opt('font', Object.entries(FONTS).map(([k, v]) => [k, `<span style="font-family:${v[0]}">ሀ ${esc(v[lang === 'am' ? 2 : 1])}</span>`]), 'font')}
@@ -261,21 +350,25 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
     else if (b.dataset.orig !== undefined) openPanel('original', Number(b.dataset.orig));
     else if (b.dataset.origFull !== undefined) renderOriginal(Number(b.dataset.origFull), b.dataset.full === '1');
     else if (b.dataset.openScan !== undefined) { const s = pages[Number(b.dataset.openScan)].src; window.open(await scanUrl(s.file, s.page), '_blank'); }
-    else if (b.dataset.step) { prefs[b.dataset.step] = Math.max(0, Math.min(SIZES.length - 1, prefs[b.dataset.step] + Number(b.dataset.d))); applyPrefs(); renderSettings(); }
+    else if (b.dataset.step) { prefs[b.dataset.step] = Math.max(0, Math.min(SIZES.length - 1, prefs[b.dataset.step] + Number(b.dataset.d))); applyPrefs(); relayout(); renderSettings(); }
     else if (b.dataset.pref) {
       const v = b.dataset.val; prefs[b.dataset.pref] = v === 'true' ? true : v === 'false' ? false : /^\d+$/.test(v) ? Number(v) : v;
-      applyPrefs(); renderSettings();
+      const keep = current; applyPrefs(); relayout(keep); renderSettings();
     }
   });
+  function relayout(keep = current) {
+    if (prefs.mode === 'book') { chap = -1; requestAnimationFrame(() => bookShowPage(keep)); }
+    else requestAnimationFrame(() => goTo(keep));
+  }
   scrim.addEventListener('click', closePanel);
   const onKey = (e) => {
     if (e.target.closest('input')) { if (e.key === 'Escape') closePanel(); return; }
     if (e.key === 'Escape') panel ? closePanel() : (cleanup(), onExit());
-    else if (e.key === 'ArrowRight' || e.key === 'PageDown') goTo(current + 1);
-    else if (e.key === 'ArrowLeft' || e.key === 'PageUp') goTo(current - 1);
+    else if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') prefs.mode === 'book' ? flip(1) : goTo(current + 1);
+    else if (e.key === 'ArrowLeft' || e.key === 'PageUp') prefs.mode === 'book' ? flip(-1) : goTo(current - 1);
   };
   document.addEventListener('keydown', onKey);
-  function cleanup() { io.disconnect(); document.removeEventListener('keydown', onKey); document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#1f4d3a'); }
+  function cleanup() { io.disconnect(); document.removeEventListener('keydown', onKey); window.removeEventListener('resize', onResize); document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#1f4d3a'); }
 
   applyPrefs(); updatePos();
   requestAnimationFrame(() => goTo(current));

@@ -261,7 +261,8 @@ def parse_printed_contents(pages, idx):
 def apply_corrections(pages, book_id):
     """data/corrections/<id>.json: [{"page": "<file>:<pdf page>:<half>", "op": ..., ...}]
     ops: replace {find, with} | type {find, t} | merge {find} (into previous block) | split {find} (new paragraph at find)
-         delete {find} | insert {after_find|"" , t, x} | noncont {} (first block does not continue the previous page)"""
+         delete {find} | insert {after_find|"" , t, x} | noncont {} (first block does not continue the previous page)
+         cont {} (first block continues the last paragraph of the previous page)"""
     path = os.path.join(ROOT, f'data/corrections/{book_id}.json')
     if not os.path.exists(path): return 0
     by_key = {f"{p['src']['file']}:{p['src']['page']}:{p['src']['half']}": p for p in pages}
@@ -283,8 +284,82 @@ def apply_corrections(pages, book_id):
         elif op == 'insert':
             at = next((i + 1 for i, b in enumerate(bl) if c.get('after_find') and c['after_find'] in b['x']), 0)
             bl.insert(at, {'t': c['t'], 'x': c['x']}); done += 1
-        elif op == 'noncont' and bl: bl[0].pop('cont', None); done += 1
+        elif op == 'noncont' and bl: bl[0].pop('cont', None); bl[0]['nocont'] = True; done += 1
+        elif op == 'cont' and bl: bl[0]['forcecont'] = True; done += 1
     return done
+
+# ---------- clean contents (transcribed from the printed contents pages) ----------
+def fold(t):
+    t = re.sub(r'[\s.…:፡።፣፤፥?!«»“”"\'()\-–—·]', '', t)
+    for a, b in (('ሐ', 'ሀ'), ('ኀ', 'ሀ'), ('ሠ', 'ሰ'), ('ዐ', 'አ'), ('ፀ', 'ጸ')): t = t.replace(a, b)
+    return t
+
+def eth_num(n):
+    if not n or not n.isdigit(): return ''
+    n = int(n); ones = ' ፩፪፫፬፭፮፯፰፱'; tens = ' ፲፳፴፵፶፷፸፹፺'
+    return (tens[n // 10] if n >= 10 else '') + (ones[n % 10] if n % 10 else '')
+
+def use_clean_contents(pages, toc, book_id, first_body):
+    """data/corrections/<id>-toc.json: [{level, num?, title, page (printed)}]. Each entry is located in the text near its
+    printed page (the printed numbers can be a few pages off); matching headings get the clean title."""
+    path = os.path.join(ROOT, f'data/corrections/{book_id}-toc.json')
+    if not os.path.exists(path): return toc
+    from rapidfuzz import fuzz
+    entries = json.load(open(path))
+    label_idx = {int(p['n']): i for i, p in enumerate(pages) if i >= first_body and p['n'] and p['n'].isdigit()}
+    def near(n):
+        for d in range(0, 6):
+            for c in (n + d, n - d):
+                if c in label_idx: return label_idx[c]
+        return first_body
+    out, last = [], first_body
+    for e in entries:
+        title = (f"ምዕራፍ {e['num']} · " if e['level'] == 1 and e.get('num') else (e['num'] + ' ' if e.get('num') else '')) + e['title']
+        want = fold(e['title']); guess = max(near(e['page']), last)
+        best = (0, None, None, None)
+        for i in range(max(first_body, guess - 4), min(len(pages), guess + 5)):
+            if i < last: continue
+            for k, b in enumerate(pages[i]['blocks']):
+                if b['t'] in ('toc', 'c'): continue
+                head = fold(b['x'][:len(e['title']) + 30])
+                if e['level'] == 1 and b['t'] == 'h1':           # chapters come in order: any chapter heading nearby, number preferred
+                    nums = {e.get('num', '-'), eth_num(e.get('num', ''))}
+                    score = 100 if any(re.search(r'ምዕራፍ\s*' + re.escape(n) + r'(?![\d፩-፼])', b['x']) for n in nums if n) else max(88, fuzz.partial_ratio(want, head))
+                else: score = fuzz.partial_ratio(want, head) if len(want) >= 3 else (100 if head.startswith(want) else 0)
+                score -= abs(i - guess) * 1.5                    # prefer the expected page
+                if b['t'] in ('h1', 'h2'): score += 4
+                if score > best[0]: best = (score, i, k, b)
+        score, i, k, b = best
+        if b is not None and score >= 78:
+            if e['level'] == 1:
+                if b['t'] != 'h1' and len(b['x']) > len(e['title']) + 30: pages[i]['blocks'].insert(k, {'t': 'h1', 'x': title})
+                else: b['t'] = 'h1'; b['x'] = title
+            else:
+                al = fuzz.partial_ratio_alignment(want, fold(b['x']))
+                if b['t'] == 'h2' or len(fold(b['x'])) <= len(want) + 12:
+                    b['t'] = 'h2'; b['x'] = title
+                elif al and al.dest_start <= 3:                    # title runs into the paragraph: split it off
+                    folded, cut, n = b['x'], 0, 0
+                    for cut, ch in enumerate(folded):
+                        if fold(ch): n += 1
+                        if n >= al.dest_end: break
+                    rest = b['x'][cut + 1:].lstrip(' :-—–፡።፣፤፥')
+                    pages[i]['blocks'][k:k + 1] = [{'t': 'h2', 'x': title}] + ([{'t': 'p', 'x': rest}] if rest else [])
+                else:
+                    pages[i]['blocks'].insert(k, {'t': 'h2', 'x': title})
+            out.append({'title': title, 'level': e['level'], 'page': i}); last = i
+        else:
+            idx = max(near(e['page']), last)
+            out.append({'title': title, 'level': e['level'], 'page': idx}); last = idx
+    # a bare "ምዕራፍ ፲፫" left in front of the clean chapter heading (its number misread) is a duplicate
+    titles = {t['title'] for t in out}
+    for p in pages:
+        bl = p['blocks']
+        for k in range(len(bl) - 1, -1, -1):
+            if bl[k]['t'] == 'h1' and bl[k]['x'] not in titles and re.fullmatch(r'ምዕራፍ\s*\S{1,3}\s*[·፥:፡]?\s*', bl[k]['x']) \
+                    and k + 1 < len(bl) and bl[k + 1]['x'] in titles:
+                bl.pop(k)
+    return out
 
 # ---------- main ----------
 def main(book_id, ocr_dir):
@@ -365,7 +440,10 @@ def main(book_id, ocr_dir):
     shift = lambda i: i - sum(1 for j in cidx[1:] if j < i)
     for t in toc: t['page'] = shift(t['page'])
 
-    chapters = [t for t in toc if t['level'] == 1 and t['title'].startswith('ምዕራፍ')]
+    fixed = apply_corrections(pages, book_id)
+    toc = use_clean_contents(pages, toc, book_id, first_body - len(cidx[1:]) if cidx else 0)
+    chapters = [] if os.path.exists(os.path.join(ROOT, f'data/corrections/{book_id}-toc.json')) else \
+        [t for t in toc if t['level'] == 1 and t['title'].startswith('ምዕራፍ')]
     for i, p in enumerate(pages):                        # chapter headings: clean title from the contents, exact page
         for b in p['blocks']:
             if b['t'] != 'h1' or b['x'] == 'ማውጫ': continue
@@ -379,11 +457,12 @@ def main(book_id, ocr_dir):
             bl.insert(0, {'t': 'h1', 'x': t['title']})
     for t in toc: t.pop('_used', None)
     toc.sort(key=lambda t: (t['page'], t['level']))
-    fixed = apply_corrections(pages, book_id)
     for a, b in zip(pages, pages[1:]):                   # paragraph continuing onto the next page
         if a['blocks'] and b['blocks'] and a['blocks'][-1]['t'] == 'p' and b['blocks'][0]['t'] == 'p' \
-                and not a['blocks'][-1]['x'].endswith(END_PUNCT) and not b['blocks'][0].get('nocont'):
+                and (not a['blocks'][-1]['x'].endswith(END_PUNCT) or b['blocks'][0].get('forcecont')) and not b['blocks'][0].get('nocont'):
             b['blocks'][0]['cont'] = True
+    for p in pages:
+        for b in p['blocks']: b.pop('nocont', None); b.pop('forcecont', None)
     for p in pages: p.pop('_lines', None)
     out = {'id': book_id, 'titleAm': book['titleAm'], 'titleEn': book['titleEn'], 'author': book['author'], 'engine': 'cloud-vision',
            'pages': pages, 'toc': toc}
