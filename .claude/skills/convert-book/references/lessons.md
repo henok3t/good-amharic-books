@@ -44,6 +44,11 @@ Problems met so far, why they happen, and what fixes them. Read this when someth
 ## Reader and site
 - The reader shows flowing text: printed page breaks are invisible anchors; book mode measures chapters off-screen and numbers
   its own pages for the current screen and settings. Don't put printed page numbers back into the reading text.
+- The PDF text edition paginates itself too: no printed page numbers in the margin, and the book's front pages flow together
+  (each front section kept on one page). Chapters start on a new page.
+- Full screen: the reader's ⛶ button (or F) uses the browser Fullscreen API (Android, desktop) and gives the page the whole screen;
+  iPhone/iPad don't allow it for web pages, so the button explains "Add to Home Screen" (the home-screen app has no browser bars).
+  Entering or leaving full screen re-flows and re-numbers the pages.
 - After a deploy, phones kept running old code from the browser cache → assets have content-hashed names; index.html and sw.js
   are never cached.
 - Some browsers drop non-Latin download file names → PDF downloads use the English title.

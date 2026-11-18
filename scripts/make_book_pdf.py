@@ -33,6 +33,8 @@ body { margin: 0; }
 .titlepage .note { position: absolute; bottom: 0; left: 0; right: 0; font: 7.5pt/1.5 'Noto Sans Ethiopic'; color: #777; }
 .front { page: front; text-align: center; break-after: page; padding-top: 12mm; }
 .front p { margin: 0 0 2.5mm; }
+.front p.orn { margin: 6mm 0; color: #b8a77f; font-size: 9pt; }
+.fpart { break-inside: avoid; }
 .contents { page: contents; break-after: page; }
 .contents h2, h2.chapter { font-size: 17pt; text-align: center; margin: 6mm 0 8mm; color: #173a2c; line-height: 1.35; }
 .contents ol { list-style: none; padding: 0; margin: 0; font-size: 10pt; }
@@ -62,12 +64,14 @@ def build_html(book, text, cover):
                f'<div class="en">{esc(book.get("titleEn"))}</div><div class="author">{esc(book.get("author"))}</div></section>')
     out.append(f'<section class="titlepage"><h1>{esc(book["titleAm"])}</h1><div class="en">{esc(book.get("titleEn"))}</div>'
                f'<div class="author">{esc(book.get("author"))}</div>'
-               f'<div class="note">ይህ ዲጂታል እትም ከተቃኘው መጽሐፍ በOCR ተቀይሮና ተገምግሞ የተዘጋጀ ነው። በኅዳግ ያሉት ቁጥሮች የዋናውን መጽሐፍ ገጾች ያመለክታሉ።<br>'
-               f'Digital edition converted from the scanned book; numbers in the margin are the original page numbers. '
+               f'<div class="note">ይህ ዲጂታል እትም ከተቃኘው መጽሐፍ ተቀይሮና ተገምግሞ ለንባብ በአዲስ መልክ የተዘጋጀ ነው፤ የገጽ አከፋፈሉ ከዋናው መጽሐፍ ይለያል።<br>'
+               f'Digital edition converted from the scanned book, proofread and newly typeset; its pages do not follow the printed edition. '
                f'Good Amharic Books · private preview · {date.today():%Y-%m-%d}</div></section>')
-    for p in pages[:max(first_body - 1, 0)]:                 # the book's own front matter (title page, imprint ...)
-        if p.get('kind') == 'contents': continue
-        out.append('<section class="front">' + ''.join(f'<p class="c">{esc(b["x"])}</p>' for b in p['blocks'] if b['x'].strip()) + '</section>')
+    # the book's own front matter (title page, imprint, dedication ...) flows together; it doesn't keep the printed page breaks
+    front = [''.join(f'<p class="c">{esc(b["x"])}</p>' for b in p['blocks'] if b['x'].strip())
+             for p in pages[:max(first_body - 1, 0)] if p.get('kind') != 'contents']
+    front = [f for f in front if f]
+    if front: out.append('<section class="front">' + '<p class="orn">✻</p>'.join(f'<div class="fpart">{f}</div>' for f in front) + '</section>')
     out.append('<section class="contents"><h2>ማውጫ</h2><ol>' + ''.join(
         f'<li class="l{t["level"]}"><a href="#{anchors[(t["page"], t["title"])]}">{esc(t["title"])}</a></li>' for t in toc
         if t['page'] >= first_body) + '</ol></section>')
@@ -75,7 +79,7 @@ def build_html(book, text, cover):
     open_p = False
     for i in range(first_body, len(pages)):
         p = pages[i]
-        mark = f'<span class="pg">{esc(p["n"])}</span>' if p.get('n') else ''
+        mark = ''                                            # no printed page numbers: this edition paginates itself
         # contents entries whose heading text isn't on the page verbatim: anchor at the page start
         mark += ''.join(f'<a id="{a}"></a>' for key, a in anchors.items() if key[0] == i and not any(b['x'] == key[1] for b in p['blocks']))
         for k, b in enumerate(p['blocks']):

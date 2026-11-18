@@ -25,7 +25,8 @@ const L = {
     offline: 'Available offline', download: 'Download for offline reading', downloading: 'Saving…', removeOffline: 'Remove offline copy',
     ocrNote: 'Converted from a scanned book and proofread. To compare any passage with the printed book, tap 📄 above.',
     pdf: 'Download as PDF (text edition)', fullSpread: 'Show both pages', mode: 'Layout', book: 'Book (turn pages)', scroll: 'Scroll',
-    tapHint: 'Tap the edges or swipe to turn the page', openImage: 'Open image', close: 'Close', printed: 'printed page' },
+    tapHint: 'Tap the edges or swipe to turn the page', openImage: 'Open image', close: 'Close', printed: 'printed page',
+    fullscreen: 'Full screen', fsIos: 'iPhone and iPad don\u2019t allow full screen for web pages. For full-screen reading, add this site to your home screen: tap Share, then “Add to Home Screen”, and open it from there.' },
   am: { contents: 'ማውጫ', bookmarks: 'ምልክቶች', search: 'በዚህ መጽሐፍ ውስጥ ፈልግ', settings: 'የንባብ ቅንብሮች', page: 'ገጽ',
     original: 'ዋናው ገጽ', noBookmarks: 'እስካሁን ምልክት የለም። ያሉበትን ቦታ ለማስቀመጥ ☆ን ይንኩ።', results: '{n} ውጤቶች',
     noResults: 'ምንም አልተገኘም።', size: 'የፊደል መጠን', spacing: 'የመስመር ክፍተት', font: 'ፊደል', theme: 'ገጽታ', width: 'ስፋት', justify: 'ጽሑፉን አስተካክል',
@@ -33,7 +34,8 @@ const L = {
     offline: 'ያለ ኢንተርኔት ይገኛል', download: 'ያለ ኢንተርኔት ለማንበብ አውርድ', downloading: 'በማስቀመጥ ላይ…', removeOffline: 'የተቀመጠውን ቅጂ አጥፋ',
     ocrNote: 'ከተቃኘ መጽሐፍ ተቀይሮ የተገመገመ ነው። ማንኛውንም ክፍል ከታተመው መጽሐፍ ጋር ለማነጻጸር ከላይ 📄ን ይንኩ።',
     pdf: 'እንደ PDF አውርድ (የጽሑፍ እትም)', fullSpread: 'ሁለቱንም ገጾች አሳይ', mode: 'አቀማመጥ', book: 'መጽሐፍ (ገጽ መግለጥ)', scroll: 'ማሸብለል',
-    tapHint: 'ገጽ ለመግለጥ ጠርዙን ይንኩ ወይም ያንሸራትቱ', openImage: 'ምስሉን ክፈት', close: 'ዝጋ', printed: 'የታተመ ገጽ' },
+    tapHint: 'ገጽ ለመግለጥ ጠርዙን ይንኩ ወይም ያንሸራትቱ', openImage: 'ምስሉን ክፈት', close: 'ዝጋ', printed: 'የታተመ ገጽ',
+    fullscreen: 'ሙሉ ገጽ', fsIos: 'iPhone እና iPad ለድረ-ገጾች ሙሉ ገጽ አይፈቅዱም። በሙሉ ገጽ ለማንበብ ይህን ገጽ በመነሻ ገጽዎ ላይ ያክሉ፦ Share ን ይንኩ፣ “Add to Home Screen” ን ይምረጡ፣ ከዚያ ይክፈቱት።' },
 };
 
 export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onExit }) {
@@ -87,6 +89,7 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
       <button class="r-icon" data-act="orig" aria-label="${esc(tr('original'))}" title="${esc(tr('original'))}">📄</button>
       <button class="r-icon" data-act="bookmark" aria-label="${esc(tr('bookmarks'))}">☆</button>
       <button class="r-icon" data-act="settings" aria-label="${esc(tr('settings'))}">Aa</button>
+      <button class="r-icon r-fs" data-act="fs" aria-label="${esc(tr('fullscreen'))}" title="${esc(tr('fullscreen'))}">⛶</button>
     </header>
     <main class="r-body" tabindex="-1"><article class="r-text"></article></main>
     <div class="r-book" hidden><div class="r-sheet"><div class="r-cols r-text"></div></div><p class="r-hint">${esc(tr('tapHint'))}</p></div>
@@ -379,6 +382,30 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
     }).catch(() => { const box = panelEl.querySelector('.rp-scan'); if (box) box.innerHTML = '<p class="rp-empty">—</p>'; });
   }
 
+  // ---------- full screen ----------
+  const fsEl = () => document.fullscreenElement || document.webkitFullscreenElement;
+  const canFs = !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
+  const standaloneApp = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  function toggleFullscreen() {
+    if (!canFs) {                                     // iPhone: the API doesn't exist; the home-screen app has no browser bars
+      if (standaloneApp) { el.classList.toggle('immersive'); return; }
+      panel = 'fs'; panelEl.hidden = false; scrim.hidden = false; panelEl.className = 'r-panel r-panel-fs';
+      panelEl.innerHTML = `${panelHead(tr('fullscreen'))}<p class="rp-empty">📲 ${esc(tr('fsIos'))}</p>`; return;
+    }
+    if (fsEl()) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    else {
+      const req = document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen;
+      Promise.resolve(req.call(document.documentElement, { navigationUI: 'hide' })).then(() => el.classList.add('immersive')).catch(() => {});
+    }
+  }
+  const onFsChange = () => {
+    el.classList.toggle('fullscreen', !!fsEl());
+    el.querySelector('.r-fs').textContent = fsEl() ? '🗗' : '⛶';
+    if (!fsEl()) el.classList.remove('immersive');
+    onResize();                                       // the page area changed size: re-flow and re-number the pages
+  };
+  document.addEventListener('fullscreenchange', onFsChange); document.addEventListener('webkitfullscreenchange', onFsChange);
+
   // ---------- events ----------
   el.addEventListener('click', async (e) => {
     const b = e.target.closest('button'); if (!b) return;
@@ -387,6 +414,7 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
     else if (act === 'close') closePanel();
     else if (act === 'toc' || act === 'search' || act === 'settings') panel === act ? closePanel() : openPanel(act);
     else if (act === 'orig') panel === 'original' ? closePanel() : openPanel('original', current);
+    else if (act === 'fs') toggleFullscreen();
     else if (act === 'bookmark') {
       let bms = local.get(bmKey, []);
       bms = bms.some((x) => x.page === current) ? bms.filter((x) => x.page !== current) : [...bms, { page: current, ts: Date.now() }].sort((a, c) => a.page - c.page);
@@ -419,12 +447,16 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
   scrim.addEventListener('click', closePanel);
   const onKey = (e) => {
     if (e.target.closest('input')) { if (e.key === 'Escape') closePanel(); return; }
-    if (e.key === 'Escape') panel ? closePanel() : (cleanup(), onExit());
+    if (e.key === 'Escape') { if (fsEl()) return; panel ? closePanel() : (cleanup(), onExit()); }
+    else if (e.key === 'f' || e.key === 'F') toggleFullscreen();
     else if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') prefs.mode === 'book' ? flip(1) : body.scrollBy({ top: body.clientHeight * 0.9 });
     else if (e.key === 'ArrowLeft' || e.key === 'PageUp') prefs.mode === 'book' ? flip(-1) : body.scrollBy({ top: -body.clientHeight * 0.9 });
   };
   document.addEventListener('keydown', onKey);
-  function cleanup() { measureRun++; document.removeEventListener('keydown', onKey); window.removeEventListener('resize', onResize); document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#1f4d3a'); }
+  function cleanup() {
+    if (fsEl()) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    document.removeEventListener('fullscreenchange', onFsChange); document.removeEventListener('webkitfullscreenchange', onFsChange);
+    measureRun++; document.removeEventListener('keydown', onKey); window.removeEventListener('resize', onResize); document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#1f4d3a'); }
 
   applyPrefs();
   updatePos();

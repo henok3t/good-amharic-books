@@ -351,3 +351,8 @@ html[lang="am"] .reading h1 { font-family: var(--ethi); }
 .pm { display: inline; font-size: 0; }
 .r-measure { position: absolute !important; left: 0; top: 0; visibility: hidden; pointer-events: none; z-index: -1; }
 .rp-row .btn[data-orig-go] { min-width: 44px; justify-content: center; }
+/* full screen: the page uses the whole screen; the bars float over it when shown (tap the middle) */
+.reader.book.fullscreen .r-book { top: calc(10px + env(safe-area-inset-top)); bottom: calc(22px + env(safe-area-inset-bottom)); }
+.reader.book.fullscreen .r-hint { display: none; }
+.reader.fullscreen .r-top, .reader.fullscreen .r-bottom { z-index: 5; box-shadow: 0 2px 14px rgba(0,0,0,.12); }
+.reader.fullscreen .r-pos::after { content: ''; }
