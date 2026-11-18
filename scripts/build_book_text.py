@@ -1,138 +1,202 @@
 """Build the readable text of a book from Cloud Vision OCR output.
 
-    python3 scripts/build_book_text.py <book id> <dir with ocr/vision/<file stem>/output-*.json>
+    python3 scripts/build_book_text.py <book id> <dir with <file stem>/output-*.json>
+
+Layout is rebuilt from line positions (not Vision's paragraphs, which often split mid-paragraph):
+  * a paragraph starts at an indented line, or after a line that ends early with sentence punctuation;
+  * a heading is a short line that is centred or taller than body text and is not mid-sentence;
+  * the book's own contents pages are replaced by a contents list parsed from them;
+  * front matter (title page, imprint) is kept as centred lines.
+Per-page fixes from proofreading are applied from data/corrections/<id>.json (see apply_corrections).
 
 Writes data/text/<id>.json:
-  { id, title, pages: [ { n: printed page label, src: {file, page, half}, conf, blocks: [ {t: 'h1'|'h2'|'p'|'pre', x: text, cont?} ] } ],
-    toc: [ {title, level, page: index into pages} ] }
+  { id, titleAm, titleEn, author, pages: [ { n, kind?, src: {file, page, half}, conf, blocks: [ {t, x, cont?} ] } ], toc }
+  block types: h1 (chapter), h2 (section), p (paragraph), c (centred line), toc (contents list), pre (verbatim lines)
 """
 import glob, json, os, re, statistics, sys
+from collections import Counter
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ETH_DIGITS = dict(zip('፩፪፫፬፭፮፯፰፱', range(1, 10)))
-END_PUNCT = ('።', '?', '!', '፧', '"', '»', '”', ')', '፡፡')
+ETH_NUM = '፩፪፫፬፭፮፯፰፱፲፳፴፵፶፷፸፹፺፻፼'
+END_PUNCT = ('።', '?', '!', '፧', '»', '”', '፡፡', '!»', '?»')
+ETH = re.compile(r'^[ሀ-፿]+$')
+LEX = Counter()
 
+# ---------- text cleanup ----------
 def norm_punct(s):
-    s = re.sub(r'፡\s*፡', '።', s)          # two wordspace marks used as a full stop
+    s = re.sub(r'፡\s*፡', '።', s)                       # two word-space marks used as a full stop
     s = re.sub(r'(?<=[ሀ-፿])\s*::', ' ።', s)
-    s = re.sub(r'\s+([።፣፤፥፦?!])', r' \1', s)  # keep the common Amharic spacing before punctuation, but single
-    s = re.sub(r'[ \t]+', ' ', s).strip()
-    return s
+    s = re.sub(r'\s*([።፣፤፥፦])', r' \1', s)              # one space before Ethiopic punctuation (common Amharic style)
+    s = re.sub(r'([።፣፤፥፦])(?=[^\s\d])', r'\1 ', s)
+    s = s.replace('« ', '«').replace(' »', '»').replace('“ ', '“').replace(' ”', '”')
+    s = re.sub(r'\(\s+', '(', s); s = re.sub(r'\s+\)', ')', s)
+    s = re.sub(r'(\d)\s*([፥፡:])\s*(\d)', r'\1 ፥ \3', s)     # Bible references: 4 ፥ 5
+    return re.sub(r'[ \t]+', ' ', s).strip()
 
 def norm_quotes(s):
     # Vision often reads the full stop ። as a straight quote between sentences
-    if s.count('"') and not re.search(r'"[\u1200-\u137F]', s):
-        s = re.sub(r'(?<=[\u1200-\u137F]) " (?=[\u1200-\u137F])', ' ። ', s)
-        s = re.sub(r'(?<=[\u1200-\u137F]) "$', ' ።', s)
+    if '"' in s and not re.search(r'"[ሀ-፿]', s):
+        s = re.sub(r'(?<=[ሀ-፿]) " (?=[ሀ-፿])', ' ። ', s)
+        s = re.sub(r'(?<=[ሀ-፿]) "$', ' ።', s)
     return s
 
-def para_lines(par):
-    """Lines of a Vision paragraph: [(text, y_top, y_bottom, height)]"""
-    lines, cur, ys = [], '', []
-    for w in par['words']:
-        for s in w['symbols']:
-            cur += s['text']
-            br = s.get('property', {}).get('detectedBreak', {}).get('type')
-            if br in ('SPACE', 'SURE_SPACE'): cur += ' '
-            if br in ('EOL_SURE_SPACE', 'LINE_BREAK', 'HYPHEN'):
-                lines.append(cur.strip()); cur = ''
-        v = w['boundingBox']['normalizedVertices']
-        ys.append((v[0].get('y', 0), v[2].get('y', 0)))
-    if cur.strip(): lines.append(cur.strip())
-    return lines, ys
+def unspace_letters(s):
+    """'ዓ ም ደ ሃ ይ ማ ኖ ት' (letter-spaced display type) -> 'ዓምደ ሃይማኖት' when it is clearly letter-spaced."""
+    toks = s.split()
+    if len(toks) >= 3 and all(len(t) == 1 and ETH.match(t) for t in toks):
+        joined = ''.join(toks)
+        # split back into words using the lexicon when possible
+        for i in range(2, len(joined) - 1):
+            if LEX[joined[:i]] and LEX[joined[i:]]: return joined[:i] + ' ' + joined[i:]
+        return joined
+    return s
 
-ETH = re.compile(r'^[\u1200-\u137F]+$')
-LEX = {}
+def glue(a_text, b_text):
+    """Join two consecutive lines: Amharic breaks words at line ends without a hyphen."""
+    a = a_text.split()[-1] if a_text.split() else ''
+    b = b_text.split()[0] if b_text.split() else ''
+    if a_text.endswith('-') and b: return a_text[:-1] + b_text
+    if ETH.match(a or '-') and ETH.match(b or '-'):
+        ca, cb, cab = LEX[a], LEX[b], LEX[a + b]
+        if cab > 0 and cab >= min(ca, cb): return a_text + b_text
+        if ca == 0 and cb == 0 and (min(len(a), len(b)) <= 2 or len(a) + len(b) <= 6): return a_text + b_text
+        if len(b) <= 2 and cb <= 1 and ca == 0: return a_text + b_text
+    return a_text + ' ' + b_text
 
-def build_lexicon(all_lines):
-    """Count words that sit inside lines (never split by a line break)."""
-    from collections import Counter
-    c = Counter()
-    for l in all_lines:
-        ws = l.split()
-        for w in ws[1:-1]:
-            if ETH.match(w): c[w] += 1
-    return c
+# ---------- OCR geometry ----------
+def vision_lines(page_obj):
+    """All text lines on a Vision page: [{x, x0, y0, x1, y1, h, conf}] (coordinates normalised 0..1)."""
+    lines = []
+    for blk in page_obj['blocks']:
+        for par in blk['paragraphs']:
+            cur, box, confs = '', None, []
+            for w in par['words']:
+                v = w['boundingBox']['normalizedVertices']
+                xs = [p.get('x', 0) for p in v]; ys = [p.get('y', 0) for p in v]
+                wb = (min(xs), min(ys), max(xs), max(ys))
+                box = wb if box is None else (min(box[0], wb[0]), min(box[1], wb[1]), max(box[2], wb[2]), max(box[3], wb[3]))
+                confs.append(w.get('confidence', 0))
+                for s in w['symbols']:
+                    cur += s['text']
+                    br = s.get('property', {}).get('detectedBreak', {}).get('type')
+                    if br in ('SPACE', 'SURE_SPACE'): cur += ' '
+                    elif br == 'HYPHEN': cur += '-'
+                    if br in ('EOL_SURE_SPACE', 'LINE_BREAK', 'HYPHEN'):
+                        if cur.strip(): lines.append({'x': cur.strip(), 'x0': box[0], 'y0': box[1], 'x1': box[2], 'y1': box[3], 'conf': statistics.mean(confs)})
+                        cur, box, confs = '', None, []
+            if cur.strip() and box: lines.append({'x': cur.strip(), 'x0': box[0], 'y0': box[1], 'x1': box[2], 'y1': box[3], 'conf': statistics.mean(confs)})
+    for l in lines: l['h'] = l['y1'] - l['y0']
+    return merge_same_row(lines)
 
-def join_lines(lines):
-    out = ''
+def merge_same_row(lines):
+    """Vision sometimes returns one printed line as several pieces (e.g. an underlined term sits a little lower):
+    group pieces whose vertical centres overlap, order them left to right, and join neighbours."""
+    lines.sort(key=lambda l: (l['y0'] + l['y1']) / 2)
+    rows = []
     for l in lines:
-        if not out: out = l; continue
-        a = out.split()[-1] if out.split() else ''
-        b = l.split()[0] if l.split() else ''
-        glue = ' '
-        if ETH.match(a or '-') and ETH.match(b or '-'):
-            ca, cb, cab = LEX.get(a, 0), LEX.get(b, 0), LEX.get(a + b, 0)
-            if cab > 0 and cab >= min(ca, cb):
-                glue = ''
-            elif ca == 0 and cb == 0 and (min(len(a), len(b)) <= 2 or len(a) + len(b) <= 6):
-                glue = ''
-            elif len(b) <= 2 and cb <= 1 and ca == 0:
-                glue = ''
-        out += glue + l
+        c = (l['y0'] + l['y1']) / 2
+        row = rows[-1] if rows else None
+        if row and abs(c - row['c']) < min(l['h'], row['h']) * 0.55: row['items'].append(l); continue
+        rows.append({'c': c, 'h': l['h'], 'items': [l]})
+    out = []
+    for row in rows:
+        items = sorted(row['items'], key=lambda l: l['x0'])
+        cur = dict(items[0])
+        for l in items[1:]:
+            if 0 <= l['x0'] - cur['x1'] < 0.06 or l['x0'] < cur['x1']:
+                cur['x'] += ' ' + l['x']; cur['x1'] = max(cur['x1'], l['x1'])
+                cur['y0'] = min(cur['y0'], l['y0']); cur['y1'] = max(cur['y1'], l['y1']); cur['h'] = max(cur['h'], l['h'])
+            else:
+                out.append(cur); cur = dict(l)
+        out.append(cur)
     return out
 
-def bbox(o):
-    v = o['boundingBox']['normalizedVertices']
-    xs = [p.get('x', 0) for p in v]; ys = [p.get('y', 0) for p in v]
-    return min(xs), min(ys), max(xs), max(ys)
-
-def is_page_number(text):
-    t = text.strip().strip('-–— .')
-    return bool(re.fullmatch(r'\d{1,4}', t)) or (0 < len(t) <= 4 and all(ch in ETH_DIGITS or ch in '፲፳፴፵፶፷፸፹፺፻' for ch in t))
-
-def split_halves(paras, landscape):
-    if not landscape:
-        return [paras]
-    # gutter = widest empty vertical band near the middle
-    xs = sorted((p['x0'], p['x1']) for p in paras)
-    best, gut = 0, 0.5
+def split_halves(lines, landscape):
+    if not landscape: return [lines]
+    spans = [(l['x0'], l['x1']) for l in lines]
+    best, gut = -1, 0.5
     for g in [i / 200 for i in range(70, 131)]:
-        if any(a < g < b for a, b in xs): continue
-        left = max([b for a, b in xs if b <= g], default=0); right = min([a for a, b in xs if a >= g], default=1)
-        if right - left > best: best, gut = right - left, g
-    return [[p for p in paras if (p['x0'] + p['x1']) / 2 < gut], [p for p in paras if (p['x0'] + p['x1']) / 2 >= gut]]
+        crossing = sum(1 for a, b in spans if a < g < b)
+        left = max([b for a, b in spans if b <= g], default=0); right = min([a for a, b in spans if a >= g], default=1)
+        score = (right - left) - crossing * 0.05
+        if score > best: best, gut = score, g
+    return [[l for l in lines if (l['x0'] + l['x1']) / 2 < gut], [l for l in lines if (l['x0'] + l['x1']) / 2 >= gut]]
 
-def build_page(paras, line_h):
-    """paras of one printed page -> (label, blocks)"""
-    if not paras: return None, []
-    paras.sort(key=lambda p: (round(p['y0'], 2), p['x0']))
+HEADERS = set()
+def norm_header(t): return re.sub(r'[\d\s' + ETH_NUM + r'.\-–—]', '', t)
+
+def is_page_number(t):
+    t = t.strip().strip('-–—. ')
+    return bool(re.fullmatch(r'\d{1,4}', t)) or (0 < len(t) <= 4 and all(ch in ETH_NUM for ch in t))
+
+# ---------- page layout ----------
+def layout_page(lines):
+    """Lines of one printed page -> (page label, blocks)."""
+    if not lines: return None, []
+    lines = sorted(lines, key=lambda l: (round(l['y0'], 3), l['x0']))
     label = None
+    ys = [l['y0'] for l in lines]; top, bottom = min(ys), max(l['y1'] for l in lines)
     body = []
-    for i, p in enumerate(paras):
-        txt = ' '.join(p['lines'])
-        if is_page_number(txt) and (p['y0'] > 0.85 or p['y1'] < 0.12):
-            label = txt.strip(); continue
-        body.append(p)
-    # running header: first item, short, near the top, and the page has more text below
-    if len(body) > 2 and body[0]['y1'] < 0.09 and len(' '.join(body[0]['lines'])) < 45:
+    for l in lines:
+        near_edge = l['y0'] - top < 0.04 or bottom - l['y1'] < 0.04
+        if is_page_number(l['x']) and near_edge: label = l['x'].strip(' -–—.'); continue
+        if len(l['x'].strip(' .,-·\'"')) <= 1 and not l['x'].strip().isdigit(): continue      # specks
+        body.append(l)
+    if not body: return label, []
+    # running header: the same short top line repeated on several pages (found in main(), passed in HEADERS)
+    if len(body) > 3 and norm_header(body[0]['x']) in HEADERS:
         body = body[1:]
-    blocks = []
-    for p in body:
-        lines = [norm_punct(l) for l in p['lines'] if l.strip()]
-        if not lines: continue
-        if len(''.join(lines).strip(' .,-·')) <= 2 and not ''.join(lines).strip().isdigit(): continue  # stray marks / OCR noise
-        txt = norm_quotes(join_lines(lines))
-        digit_end = sum(1 for l in lines if re.search(r'(\d+|[፩-፼]+)\s*$', l))
-        if len(lines) >= 3 and digit_end >= len(lines) * 0.6:
-            blocks.append({'t': 'pre', 'x': '\n'.join(lines)}); continue
-        tall = p['h'] > line_h * 1.35
-        if re.match(r'^ምዕራፍ\s*([\d፩-፼]+)', txt) and len(txt) < 60:
-            blocks.append({'t': 'h1', 'x': txt})
-        elif (tall or len(lines) == 1) and len(txt) < 60 and not txt.endswith(END_PUNCT):
-            blocks.append({'t': 'h2', 'x': txt})
+    # margins measured locally, so slightly tilted scans don't make every line look indented
+    def margins(i):
+        win = body[max(0, i - 5): i + 6]
+        x0 = sorted(l['x0'] for l in win); x1 = sorted(l['x1'] for l in win)
+        return x0[len(x0) // 4], x1[len(x1) * 3 // 4]
+    M = [margins(i) for i in range(len(body))]
+    W = max(statistics.median([r - l for l, r in M]), 1e-6)
+    H = statistics.median([l['h'] for l in body])
+    blocks, para = [], None
+    def flush():
+        nonlocal para
+        if para: blocks.append({'t': 'p', 'x': para}); para = None
+    prev = None
+    for li, l in enumerate(body):
+        text = norm_punct(l['x'])
+        L, R = M[li]
+        indent = (l['x0'] - L) / W
+        right_gap = (R - l['x1']) / W
+        centered = indent > 0.07 and right_gap > 0.07 and abs(indent - right_gap) < 0.12
+        tall = l['h'] > H * 1.28
+        prev_ended = prev is None or prev['end']
+        heading = (centered or tall) and len(text) < 75 and not text.endswith(('።', '፣', '፤', '፥')) and prev_ended
+        if re.match(r'^ምዕራፍ\s*[\d' + ETH_NUM + r']', text) and len(text) < 70:
+            flush(); blocks.append({'t': 'h1', 'x': text}); prev = {'end': True, 'head': True}; continue
+        if heading:
+            flush()
+            if blocks and blocks[-1]['t'] in ('h1', 'h2') and prev and prev.get('head'):
+                if blocks[-1]['t'] == 'h1' and '·' not in blocks[-1]['x']: blocks[-1]['x'] += ' · ' + text
+                else: blocks[-1]['x'] = glue(blocks[-1]['x'], text)
+            else:
+                blocks.append({'t': 'h2', 'x': text})
+            prev = {'end': True, 'head': True}; continue
+        bullet = bool(re.match(r'^([ሀ-ፐ]|\d{1,2}|[a-z])[.)/]\s|^[—–•-]\s?', text))
+        prev_punct = bool(prev and prev.get('punct'))
+        term = bool(re.match(r'^\S.{1,40}?\s[—–]\s', text))       # "term — definition"
+        outdent = bool(prev and prev.get('indent', 0) - indent > 0.05)  # back at the margin after hanging lines
+        new_para = (para is None or bullet or term or outdent or (prev and prev.get('head'))
+                    or (indent > 0.035 and prev_punct)            # indented first line after a finished sentence
+                    or (prev and prev.get('short') and prev_punct)) # previous line ended early with a full stop
+        if new_para:
+            flush(); para = text
         else:
-            blocks.append({'t': 'p', 'x': txt})
-    # chapter heading followed by its title: merge "ምዕራፍ ፲" + "ታቦት ጽላት"; section number + title
-    out = []
-    for b in blocks:
-        if out and out[-1]['t'] == 'h2' and b['t'] in ('h2', 'p') and re.fullmatch(r'[\d፩-፼]+(\.[\d]+)*\.?', out[-1]['x'].strip()) and len(b['x']) < 80:
-            out[-1]['x'] += ' ' + b['x']; continue
-        if out and out[-1]['t'] == 'h1' and b['t'] == 'h2' and '·' not in out[-1]['x'] and len(out[-1]['x']) < 14:
-            out[-1]['x'] += ' · ' + b['x']; continue
-        out.append(b)
-    return label, out
+            para = glue(para, text)                              # includes hanging-indent continuation lines
+        short = right_gap > 0.12
+        punct = text.endswith(END_PUNCT + ('።', ':', '"', '.'))
+        prev = {'end': short and punct, 'short': short, 'punct': punct, 'head': False, 'indent': indent}
+    flush()
+    for b in blocks: b['x'] = norm_quotes(b['x'])
+    return label, blocks
 
+# ---------- page labels and contents ----------
 def fix_labels(pages):
     """Printed page numbers run in sequence: replace outliers and fill gaps from the neighbours."""
     nums = [int(p['n']) if p['n'] and p['n'].isdigit() else None for p in pages]
@@ -141,23 +205,24 @@ def fix_labels(pages):
         window = [o for o in offs[max(0, i - 6): i + 7] if o is not None]
         if len(window) < 3: continue
         mode = max(set(window), key=window.count)
-        if window.count(mode) >= 3 and i + mode >= 1:
-            pages[i]['n'] = str(i + mode)
-    # front matter: a number larger than a later page's number is not a page number (e.g. contents entries)
+        if window.count(mode) >= 3 and i + mode >= 1: pages[i]['n'] = str(i + mode)
     nxt = None
-    for p in reversed(pages):
+    for p in reversed(pages):                            # front matter: numbers that run backwards are not page numbers
         n = int(p['n']) if p['n'] and p['n'].isdigit() else None
         if n is None: continue
         if nxt is not None and n >= nxt: p['n'] = None
         else: nxt = n
 
-def parse_printed_contents(pages, contents_idx):
-    """Entries from the book's own contents pages: [(level, title, printed page)]."""
+def is_contents_page(p):
+    lines = [l['x'] for l in p['_lines']]
+    trailing = sum(1 for l in lines if re.search(r'(\.{3,}|…)|\s\d{1,3}\.?$', l))
+    return trailing >= 4 or any(re.sub(r'\s', '', l) == 'ማውጫ' for l in lines[:3]) and trailing >= 2
+
+def parse_printed_contents(pages, idx):
+    """Entries from the book's own contents pages: [{level, num, title, page}] in reading order."""
     toks = []
-    for i in contents_idx:
-        for b in pages[i]['blocks']:
-            for line in b['x'].split('\n'):
-                toks += re.sub(r'[.…]{2,}', ' ', line).split()
+    for i in idx:
+        for l in pages[i]['_lines']: toks += re.sub(r'[.…]{2,}', ' ', l['x']).split()
     entries, cur = [], None
     def close():
         if cur and cur['title'].strip(): entries.append(cur)
@@ -169,42 +234,63 @@ def parse_printed_contents(pages, contents_idx):
         if re.fullmatch(r'\d{1,2}[.,]\d{1,2}', t):
             close(); cur = {'level': 2, 'num': t.replace(',', '.'), 'title': '', 'page': None}; k += 1; continue
         if re.fullmatch(r'\d{1,3}\.?', t):
-            n = int(t.rstrip('.'))
-            target = cur if cur and cur['page'] is None else (entries[-1] if entries and entries[-1]['page'] is None else None)
-            if target is not None and cur is not None and target is cur and not cur['title']:
-                pass
-            elif target is not None:
-                target['page'] = n
+            target = cur if cur and cur['page'] is None and cur['title'] else (entries[-1] if entries and entries[-1]['page'] is None else None)
+            if target is not None: target['page'] = int(t.rstrip('.'))
             k += 1; continue
         if cur is not None and t not in '·፥:፡\'?' and not t.startswith('$'):
             if cur['page'] is None: cur['title'] += (' ' if cur['title'] else '') + t
-            else:
-                close(); cur = {'level': 2, 'num': '', 'title': t, 'page': None}  # unnumbered entry
+            else: close(); cur = {'level': 2, 'num': '', 'title': t, 'page': None}
         k += 1
     close()
-    entries = [e for e in entries if re.search(r'[\u1200-\u137F]', e['title'])]
-    for i, e in enumerate(entries):                     # chapter without a page: use its first section's page
-        if e['level'] == 1 and not e['page']:
-            e['page'] = next((x['page'] for x in entries[i + 1:] if x['page']), None)
+    entries = [e for e in entries if re.search(r'[ሀ-፿]', e['title'])]
+    for i, e in enumerate(entries):
+        if e['level'] == 1 and not e['page']: e['page'] = next((x['page'] for x in entries[i + 1:] if x['page']), None)
     kept, chapter, last = [], None, 0
     for e in entries:
         if not e['page']: continue
-        if e['level'] == 1:
-            chapter = e['num']
+        if e['level'] == 1: chapter = e['num']
         elif e['num'] and chapter and e['num'].split('.')[0] != chapter:
             if chapter.isdigit() and e['num'].split('.')[0] == str(int(chapter) + 1) and e['page'] >= last:
-                chapter = str(int(chapter) + 1)              # chapter line lost in OCR: start it at its section
-                kept.append({'level': 1, 'num': chapter, 'title': '', 'page': e['page']})
-            else:
-                continue                                   # misread or misplaced section number
+                chapter = str(int(chapter) + 1); kept.append({'level': 1, 'num': chapter, 'title': '', 'page': e['page']})
+            else: continue
         if e['page'] < last: continue
         kept.append(e); last = e['page']
     return kept
 
+# ---------- corrections from proofreading ----------
+def apply_corrections(pages, book_id):
+    """data/corrections/<id>.json: [{"page": "<file>:<pdf page>:<half>", "op": ..., ...}]
+    ops: replace {find, with} | type {find, t} | merge {find} (into previous block) | split {find} (new paragraph at find)
+         delete {find} | insert {after_find|"" , t, x} | noncont {} (first block does not continue the previous page)"""
+    path = os.path.join(ROOT, f'data/corrections/{book_id}.json')
+    if not os.path.exists(path): return 0
+    by_key = {f"{p['src']['file']}:{p['src']['page']}:{p['src']['half']}": p for p in pages}
+    done = 0
+    for c in json.load(open(path)):
+        p = by_key.get(c['page'])
+        if not p: continue
+        bl = p['blocks']
+        find = c.get('find', '')
+        k = next((i for i, b in enumerate(bl) if find and find in b['x']), None)
+        op = c['op']
+        if op == 'replace' and k is not None: bl[k]['x'] = bl[k]['x'].replace(find, c['with']); done += 1
+        elif op == 'type' and k is not None: bl[k]['t'] = c['t']; done += 1
+        elif op == 'delete' and k is not None: bl.pop(k); done += 1
+        elif op == 'merge' and k: bl[k - 1]['x'] = glue(bl[k - 1]['x'], bl[k]['x']); bl.pop(k); done += 1
+        elif op == 'split' and k is not None:
+            at = bl[k]['x'].index(find); a, b = bl[k]['x'][:at].rstrip(), bl[k]['x'][at:]
+            if a: bl[k]['x'] = a; bl.insert(k + 1, {'t': c.get('t', 'p'), 'x': b}); done += 1
+        elif op == 'insert':
+            at = next((i + 1 for i, b in enumerate(bl) if c.get('after_find') and c['after_find'] in b['x']), 0)
+            bl.insert(at, {'t': c['t'], 'x': c['x']}); done += 1
+        elif op == 'noncont' and bl: bl[0].pop('cont', None); done += 1
+    return done
+
+# ---------- main ----------
 def main(book_id, ocr_dir):
     cat = json.load(open(os.path.join(ROOT, 'data/catalog.json')))
     book = next(b for b in cat['books'] if b['id'] == book_id)
-    pages, raw = [], []
+    raw = []
     for part in book['parts']:
         if not part.get('file'): continue
         stem = os.path.splitext(part['file'])[0]
@@ -212,76 +298,100 @@ def main(book_id, ocr_dir):
         for f in sorted(glob.glob(f'{ocr_dir}/{stem}/output-*.json'), key=lambda f: int(re.search(r'output-(\d+)', f).group(1))):
             responses += json.load(open(f))['responses']
         for r in responses:
-            pg = r.get('context', {}).get('pageNumber')
             fta = r.get('fullTextAnnotation')
             if not fta: continue
             vp = fta['pages'][0]
             landscape = vp['width'] > vp['height'] * 1.1
-            paras = []
-            for blk in vp['blocks']:
-                for par in blk['paragraphs']:
-                    lines, ys = para_lines(par)
-                    x0, y0, x1, y1 = bbox(par)
-                    hs = [b - a for a, b in ys] or [0]
-                    paras.append({'lines': lines, 'x0': x0, 'y0': y0, 'x1': x1, 'y1': y1, 'h': statistics.median(hs), 'conf': par.get('confidence', 0)})
-            if not paras: continue
-            line_h = statistics.median([p['h'] for p in paras])
-            for hi, half in enumerate(split_halves(paras, landscape)):
-                raw.append((half, line_h, {'file': part['file'], 'page': pg, 'half': ['L', 'R'][hi] if landscape else 'F'}))
-    LEX.update(build_lexicon([l for half, _, _ in raw for p in half for l in p['lines']]))
-    for half, line_h, src in raw:
-        label, blocks = build_page(half, line_h)
-        if not blocks: continue
-        conf = statistics.mean([p['conf'] for p in half]) if half else 0
-        pages.append({'n': label, 'src': src, 'conf': round(conf, 3), 'blocks': blocks})
+            for hi, half in enumerate(split_halves(vision_lines(vp), landscape)):
+                if half: raw.append((half, {'file': part['file'], 'page': r['context']['pageNumber'], 'half': ['L', 'R'][hi] if landscape else 'F'}))
+    for half, _ in raw:                                  # lexicon from words that sit inside lines
+        for l in half:
+            for w in l['x'].split()[1:-1]:
+                if ETH.match(w): LEX[w] += 1
+    tops = Counter(norm_header(sorted(h, key=lambda l: l['y0'])[0]['x']) for h, _ in raw if len(h) > 3)
+    HEADERS.update(t for t, n in tops.items() if n >= 3 and t and len(t) < 45 and not t.startswith('ምዕራፍ'))
+    pages = []
+    for half, src in raw:
+        label, blocks = layout_page(half)
+        if blocks: pages.append({'n': label, 'src': src, 'conf': round(statistics.mean(l['conf'] for l in half), 3), 'blocks': blocks, '_lines': half})
     fix_labels(pages)
-    # paragraphs that continue onto the next page
-    for a, b in zip(pages, pages[1:]):
-        last = a['blocks'][-1]; first = b['blocks'][0]
-        if last['t'] == 'p' and first['t'] == 'p' and not last['x'].endswith(END_PUNCT):
-            first['cont'] = True
-    first_ch = 0
-    def contents_page(p):
-        lines = [l for b in p['blocks'] for l in b['x'].split('\n')]
-        return any(b['t'] == 'pre' for b in p['blocks']) or sum(1 for l in lines if re.search(r'(\.{3,}|…)|\s\d{1,3}$', l)) >= 3
-    toc = []
-    contents_idx = [i for i, p in enumerate(pages[:15]) if contents_page(p)]
-    if contents_idx: contents_idx = list(range(contents_idx[0], contents_idx[-1] + 1))  # one continuous run
-    printed = parse_printed_contents(pages, contents_idx) if contents_idx else []
+
+    # contents pages -> parsed contents list
+    cidx = [i for i, p in enumerate(pages[:20]) if is_contents_page(p)]
+    if cidx: cidx = list(range(cidx[0], cidx[-1] + 1))
+    printed = parse_printed_contents(pages, cidx) if cidx else []
+    first_body = (cidx[-1] + 1) if cidx else 0
     label_to_idx = {}
     for i, p in enumerate(pages):
-        if p['n'] and p['n'].isdigit() and i > (contents_idx[-1] if contents_idx else -1): label_to_idx.setdefault(int(p['n']), i)
+        if i >= first_body and p['n'] and p['n'].isdigit(): label_to_idx.setdefault(int(p['n']), i)
     def nearest(n):
         for d in range(0, 4):
             for c in (n + d, n - d):
                 if c in label_to_idx: return label_to_idx[c]
+    toc = []
     if sum(1 for e in printed if e['level'] == 1) >= 3:
         for e in printed:
             idx = nearest(e['page'])
             if idx is None: continue
             t = e['title'].strip(' ?."\'·፥')
-            if e['level'] == 1 and not t:                  # title from the chapter heading in the body
+            if e['level'] == 1 and not t:
                 h = next((b['x'] for b in pages[idx]['blocks'] if b['t'] == 'h1'), '')
                 t = re.sub(r'^ምዕራፍ\s*\S+\s*[·፥:፡]*\s*', '', h).strip(' ?."\'·፥')
-            title = (f"ምዕራፍ {e['num']}" + (f" · {t}" if t else '') if e['level'] == 1 else (e['num'] + ' ' if e['num'] else '') + t)
-            toc.append({'title': title, 'level': e['level'], 'page': idx})
-        intro = next((i for i, p in enumerate(pages) if i > (contents_idx[-1] if contents_idx else 0) and any(b['t'] == 'h2' and b['x'].replace(' ', '') == 'መግቢያ' for b in p['blocks'])), None)
-        if intro is not None: toc.insert(0, {'title': 'መግቢያ', 'level': 1, 'page': intro})
-        toc.sort(key=lambda e: e['page'])
-    for i, p in enumerate(pages if not toc else []):
-        if contents_page(p): continue   # the printed contents pages themselves
-        if not first_ch and any(b['t'] == 'h1' for b in p['blocks']): first_ch = i
-        for blk in p['blocks']:
-            if blk['t'] not in ('h1', 'h2') or len(blk['x']) < 3 or '..' in blk['x'] or '…' in blk['x']: continue
-            if blk['t'] == 'h2' and (not first_ch or i < first_ch) and blk['x'].replace(' ', '') not in ('መግቢያ', 'መቅድም', 'ምስጋና', 'ልዩመግለጫ', 'ማውጫ'): continue
-            if blk['t'] == 'h2' and i >= first_ch and not re.match(r'^[\d፩-፼]+\.\d+\s+\S', blk['x']): continue
-            toc.append({'title': blk['x'], 'level': 1 if blk['t'] == 'h1' else 2, 'page': i})
+            toc.append({'title': (f"ምዕራፍ {e['num']}" + (f" · {t}" if t else '')) if e['level'] == 1 else ((e['num'] + ' ') if e['num'] else '') + t,
+                        'level': e['level'], 'page': idx})
+    # unnumbered front sections that appear as headings after the contents (መግቢያ, ልዩ መግለጫ ...)
+    first_ch = min([t['page'] for t in toc if t['title'].startswith('ምዕራፍ')], default=len(pages))
+    for i in range(first_body, min(first_ch, len(pages))):
+        for b in pages[i]['blocks']:
+            if b['t'] == 'h2' and len(b['x']) < 30 and not any(t['page'] == i and t['title'] == b['x'] for t in toc):
+                b['x'] = unspace_letters(b['x']); toc.append({'title': b['x'], 'level': 1, 'page': i})
+    toc.sort(key=lambda t: (t['page'], t['level']))
+    if not toc:                                          # no printed contents: chapter headings found in the text
+        toc = [{'title': b['x'], 'level': 1, 'page': i} for i, p in enumerate(pages) for b in p['blocks'] if b['t'] == 'h1']
+
+    # front matter before the contents: centred display lines
+    for i in range(0, cidx[0] if cidx else 0):
+        for b in pages[i]['blocks']:
+            b['t'] = 'c'; b['x'] = unspace_letters(b['x'])
+    # contents pages: one generated, linked contents list
+    for n, i in enumerate(cidx):
+        pages[i]['kind'] = 'contents'
+        pages[i]['blocks'] = [{'t': 'h1', 'x': 'ማውጫ'}, {'t': 'toc', 'x': ''}] if n == 0 else []
+    pages = [p for p in pages if p['blocks']]
+    # page indexes shift after dropping empty contents pages
+    old_to_new = {}
+    for new, p in enumerate(pages): old_to_new[id(p)] = new
+    # (toc page indexes were computed before the drop)
+    shift = lambda i: i - sum(1 for j in cidx[1:] if j < i)
+    for t in toc: t['page'] = shift(t['page'])
+
+    chapters = [t for t in toc if t['level'] == 1 and t['title'].startswith('ምዕራፍ')]
+    for i, p in enumerate(pages):                        # chapter headings: clean title from the contents, exact page
+        for b in p['blocks']:
+            if b['t'] != 'h1' or b['x'] == 'ማውጫ': continue
+            near = min(chapters, key=lambda t: abs(t['page'] - i), default=None)
+            if near and abs(near['page'] - i) <= 2 and not near.get('_used'):
+                b['x'] = near['title']; near['page'] = i; near['_used'] = True
+    for t in chapters:                                   # heading not recognised in the text: put it at the top of its page
+        if not t.get('_used') and t['page'] < len(pages):
+            bl = pages[t['page']]['blocks']
+            if bl and bl[0]['t'] in ('h2', 'p') and re.match(r'^ምዕ', bl[0]['x']) and len(bl[0]['x']) < 60: bl.pop(0)
+            bl.insert(0, {'t': 'h1', 'x': t['title']})
+    for t in toc: t.pop('_used', None)
+    toc.sort(key=lambda t: (t['page'], t['level']))
+    fixed = apply_corrections(pages, book_id)
+    for a, b in zip(pages, pages[1:]):                   # paragraph continuing onto the next page
+        if a['blocks'] and b['blocks'] and a['blocks'][-1]['t'] == 'p' and b['blocks'][0]['t'] == 'p' \
+                and not a['blocks'][-1]['x'].endswith(END_PUNCT) and not b['blocks'][0].get('nocont'):
+            b['blocks'][0]['cont'] = True
+    for p in pages: p.pop('_lines', None)
     out = {'id': book_id, 'titleAm': book['titleAm'], 'titleEn': book['titleEn'], 'author': book['author'], 'engine': 'cloud-vision',
            'pages': pages, 'toc': toc}
     os.makedirs(os.path.join(ROOT, 'data/text'), exist_ok=True)
     json.dump(out, open(os.path.join(ROOT, f'data/text/{book_id}.json'), 'w'), ensure_ascii=False, separators=(',', ':'))
-    chars = sum(len(b['x']) for p in pages for b in p['blocks'])
-    print(f'book {book_id}: {len(pages)} pages, {chars} chars, {len(toc)} headings, mean conf {statistics.mean([p["conf"] for p in pages]):.3f}')
+    c = Counter(b['t'] for p in pages for b in p['blocks'])
+    print(f'book {book_id}: {len(pages)} pages, {sum(len(b["x"]) for p in pages for b in p["blocks"])} chars, '
+          f'{len(toc)} contents entries, blocks {dict(c)}, corrections applied {fixed}')
 
 if __name__ == '__main__':
     main(int(sys.argv[1]), sys.argv[2])

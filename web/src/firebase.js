@@ -42,6 +42,10 @@ export function fileUrl(name) { return storageUrl(`files/${name}`); }
 export function scanUrl(file, page) {
   if (__DEV__) return Promise.resolve(`/dev/scans/${file.replace(/\.[^.]+$/, '')}/${page}.webp`);
   return storageUrl(`scans/${file.replace(/\.[^.]+$/, '')}/${page}.webp`); }
+export function pdfUrl(id, kind) {
+  if (__DEV__) return Promise.resolve(`/dev/pdf/${id}-${kind}.pdf`);
+  return storageUrl(`pdf/${id}-${kind}.pdf`);
+}
 export async function loadText(id) {
   if (__DEV__) return (await fetch(`/dev/text/${id}.json`)).json();
   const bytes = await getBytes(ref(storage, `text/${id}.json`));

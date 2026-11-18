@@ -56,6 +56,8 @@ for b in raw["books"]:
         "titleImage": title_img, "cover": covers[0] if covers else None,
         "parts": parts, "keywords": slug,
         **({"hasText": True} if os.path.exists(os.path.join(ROOT, f"data/text/{b['id']}.json")) else {}),
+        **({"pdfText": True} if os.path.exists(os.path.join(ROOT, f"data/pdf/{b['id']}-text.pdf")) else {}),
+        **({"pdfScan": True} if os.path.exists(os.path.join(ROOT, f"data/pdf/{b['id']}-scan.pdf")) else {}),
     })
 
 cats = {}

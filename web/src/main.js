@@ -1,4 +1,4 @@
-import { watchUser, signIn, logOut, loadCatalog, fileUrl, loadText, scanUrl } from './firebase.js';
+import { watchUser, signIn, logOut, loadCatalog, fileUrl, loadText, scanUrl, pdfUrl } from './firebase.js';
 import { openReader } from './reader.js';
 import { idbGet, idbSet, idbDel, idbKeys, local } from './store.js';
 import { buildIndex, search } from './search.js';
@@ -165,7 +165,9 @@ function bookView(id) {
 function readCta(b) {
   const pr = local.get(`gab-progress-${b.id}`, null);
   return `<div class="read-cta"><a class="btn primary big" href="#/read/${b.id}">📖 ${pr ? t('continueAt', { p: pr.label, pct: pr.pct }) : t('readNow')}</a>
-    <span class="read-note">${t('readNote')}</span>${pr ? `<div class="progress"><i style="width:${pr.pct}%"></i></div>` : ''}</div>`;
+    <span class="read-note">${t('readNote')}</span>${pr ? `<div class="progress"><i style="width:${pr.pct}%"></i></div>` : ''}
+    ${b.pdfText || b.pdfScan ? `<div class="pdf-row">${b.pdfText ? `<button class="btn" data-pdf="text" data-id="${b.id}">⤓ ${t('pdfText')}</button>` : ''}${b.pdfScan ? `<button class="btn" data-pdf="scan" data-id="${b.id}">⤓ ${t('pdfScan')}</button>` : ''}</div>
+      <span class="read-note">${t('pdfNote2')}</span>` : ''}</div>`;
 }
 
 async function readingView() {
@@ -202,9 +204,21 @@ async function readerView(id) {
   let saved = wasOffline;
   readerHandle = openReader(app, {
     book: b, text, lang: lang(), scanUrl,
+    pdf: b.pdfText ? () => pdfUrl(b.id, 'text') : null,
     offline: { has: () => saved, save: async () => { await idbSet(`text:${b.id}`, text); saved = true; }, remove: async () => { await idbDel(`text:${b.id}`); saved = false; } },
     onExit: () => { readerHandle = null; history.length > 1 ? history.back() : go(`#/book/${b.id}`); },
   });
+}
+
+async function downloadPdf(btn) {
+  const bk = state.byId.get(Number(btn.dataset.id)); const kind = btn.dataset.pdf; const label = btn.textContent;
+  btn.disabled = true; btn.textContent = t('loading');
+  try {
+    const url = await pdfUrl(bk.id, kind);
+    const a = document.createElement('a'); a.href = url;
+    a.download = `${bk.titleAm || bk.titleEn || bk.id}${kind === 'scan' ? ' (scan)' : ''}.pdf`; a.click();
+  } catch { alert(t('notCopied')); }
+  finally { btn.disabled = false; btn.textContent = label; }
 }
 
 const isIos = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -304,6 +318,7 @@ app.addEventListener('click', async (e) => {
   if (b.dataset.readable !== undefined) {
     b.classList.toggle('on'); return setParam('t', b.classList.contains('on') ? '1' : '');
   }
+  if (b.dataset.pdf) return downloadPdf(b);
   if (b.dataset.action === 'install' && installPrompt) { installPrompt.prompt(); installPrompt = null; return render(); }
   if (b.dataset.group !== undefined) {
     const on = !b.classList.contains('on');

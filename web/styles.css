@@ -306,3 +306,5 @@ html[lang="am"] .reading h1 { font-family: var(--ethi); }
   .r-pos { min-width: 0; }
 }
 .reader [hidden] { display: none !important; }
+.pdf-row { display: flex; flex-wrap: wrap; gap: 8px; }
+@media (max-width: 760px) { .pdf-row .btn { flex: 1; justify-content: center; } }

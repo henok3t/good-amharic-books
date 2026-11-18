@@ -25,6 +25,7 @@ function writeShell(js, css) {
 if (dev) {
   mkdirSync('public/dev', { recursive: true }); cpSync('data/catalog.json', 'public/dev/catalog.json');
   cpSync('data/text', 'public/dev/text', { recursive: true }); cpSync('data/scans', 'public/dev/scans', { recursive: true });
+  cpSync('data/pdf', 'public/dev/pdf', { recursive: true });
   cpSync('web/styles.css', 'public/assets/styles.css');
   writeShell('main.js', 'styles.css');
   const ctx = await esbuild.context(opts);

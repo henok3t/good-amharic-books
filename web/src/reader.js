@@ -21,17 +21,17 @@ const L = {
     light: 'Light', sepia: 'Sepia', dark: 'Dark', narrow: 'Narrow', normal: 'Normal', wide: 'Wide', back: 'Back',
     offline: 'Available offline', download: 'Download for offline reading', downloading: 'Saving…', removeOffline: 'Remove offline copy',
     ocrNote: 'Converted from a scanned book by OCR. Some words may be misread — tap a page number to compare with the original.',
-    fullSpread: 'Show both pages', openImage: 'Open image', close: 'Close', of: 'of' },
+    pdf: 'Download as PDF (text edition)', fullSpread: 'Show both pages', openImage: 'Open image', close: 'Close', of: 'of' },
   am: { contents: 'ማውጫ', bookmarks: 'ምልክቶች', search: 'በዚህ መጽሐፍ ውስጥ ፈልግ', settings: 'የንባብ ቅንብሮች', page: 'ገጽ',
     original: 'ዋናው ገጽ', noBookmarks: 'እስካሁን ምልክት የለም። ያሉበትን ገጽ ለማስቀመጥ ☆ን ይንኩ።', results: '{n} ውጤቶች',
     noResults: 'ምንም አልተገኘም።', size: 'የፊደል መጠን', spacing: 'የመስመር ክፍተት', font: 'ፊደል', theme: 'ገጽታ', width: 'ስፋት', justify: 'ጽሑፉን አስተካክል',
     light: 'ብሩህ', sepia: 'ሴፒያ', dark: 'ጨለማ', narrow: 'ጠባብ', normal: 'መደበኛ', wide: 'ሰፊ', back: 'ተመለስ',
     offline: 'ያለ ኢንተርኔት ይገኛል', download: 'ያለ ኢንተርኔት ለማንበብ አውርድ', downloading: 'በማስቀመጥ ላይ…', removeOffline: 'የተቀመጠውን ቅጂ አጥፋ',
     ocrNote: 'ከተቃኘ መጽሐፍ በOCR የተቀየረ ነው። አንዳንድ ቃላት በስህተት ሊነበቡ ይችላሉ — ከዋናው ጋር ለማነጻጸር የገጽ ቁጥሩን ይንኩ።',
-    fullSpread: 'ሁለቱንም ገጾች አሳይ', openImage: 'ምስሉን ክፈት', close: 'ዝጋ', of: 'ከ' },
+    pdf: 'እንደ PDF አውርድ (የጽሑፍ እትም)', fullSpread: 'ሁለቱንም ገጾች አሳይ', openImage: 'ምስሉን ክፈት', close: 'ዝጋ', of: 'ከ' },
 };
 
-export function openReader(root, { book, text, lang, scanUrl, offline, onExit }) {
+export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onExit }) {
   const tr = (k, v = {}) => Object.entries(v).reduce((s, [a, b]) => s.replace(`{${a}}`, b), L[lang === 'am' ? 'am' : 'en'][k]);
   const prefs = { ...DEFAULTS, ...local.get('gab-reader', {}) };
   const progKey = `gab-progress-${book.id}`, bmKey = `gab-bm-${book.id}`;
@@ -223,6 +223,7 @@ export function openReader(root, { book, text, lang, scanUrl, offline, onExit })
       ${opt('theme', THEMES.map((v) => [v, esc(tr(v))]), 'theme')}
       ${opt('width', ['narrow', 'normal', 'wide'].map((v) => [v, esc(tr(v))]), 'width')}
       ${opt('justify', [[false, '☰'], [true, '≡']], 'justify')}
+      ${pdf ? `<div class="rp-row"><button class="btn wide" data-act="pdf">⤓ ${esc(tr('pdf'))}</button></div>` : ''}
       <div class="rp-row"><button class="btn wide" data-act="offline">${esc(offline.has() ? '✓ ' + tr('offline') + ' · ' + tr('removeOffline') : '⤓ ' + tr('download'))}</button></div>
       <p class="rp-preview" style="font-family:var(--r-font)">${esc((pages.find((p) => p.blocks.some((b) => b.t === 'p'))?.blocks.find((b) => b.t === 'p')?.x || '').slice(0, 140))}…</p>`;
   }
@@ -250,6 +251,8 @@ export function openReader(root, { book, text, lang, scanUrl, offline, onExit })
       let bms = local.get(bmKey, []);
       bms = bms.some((x) => x.page === current) ? bms.filter((x) => x.page !== current) : [...bms, { page: current, ts: Date.now() }].sort((a, c) => a.page - c.page);
       local.set(bmKey, bms); updatePos();
+    } else if (act === 'pdf') {
+      const a = document.createElement('a'); a.href = await pdf(); a.download = `${book.titleAm || book.id}.pdf`; a.click();
     } else if (act === 'offline') {
       b.disabled = true; b.textContent = tr('downloading');
       await (offline.has() ? offline.remove() : offline.save()); renderSettings();

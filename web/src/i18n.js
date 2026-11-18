@@ -49,6 +49,8 @@ const T = {
   pageOf: ['Page {p} · {pct}%', 'ገጽ {p} · {pct}%'], notStarted: ['Not started', 'ገና አልተጀመረም'], offlineReady: ['Available offline', 'ያለ ኢንተርኔት ይገኛል'],
   textUnavailable: ['This book\u2019s text couldn\u2019t be loaded. Check your connection.', 'የመጽሐፉ ጽሑፍ ሊጫን አልቻለም። ግንኙነትዎን ያረጋግጡ።'],
   install: ['Install app', 'መተግበሪያውን ጫን'],
+  pdfText: ['PDF · text edition', 'PDF · የጽሑፍ እትም'], pdfScan: ['PDF · original scans', 'PDF · ዋናው ቅኝት'],
+  pdfNote2: ['The text edition is newly typeset for reading and printing; the scan PDF combines the original pages into one file.', 'የጽሑፍ እትሙ ለንባብና ለሕትመት በአዲስ መልክ የተዘጋጀ ነው፤ የቅኝቱ PDF ዋናዎቹን ገጾች በአንድ ፋይል ያጣምራል።'],
   iosInstall: ['To install on iPhone or iPad: tap Share, then “Add to Home Screen”.', 'በiPhone ወይም iPad ላይ ለመጫን፦ Share ን ይንኩ፣ ከዚያ “Add to Home Screen” ን ይምረጡ።'], library: ['Library', 'ቤተ መጻሕፍት'], about: ['About', 'ስለ እኛ'],
   heroTitle: ['A free library of Amharic Christian books', 'ነጻ የአማርኛ ክርስቲያናዊ መጻሕፍት ቤተ መጻሕፍት'],
   heroSub: ['{n} books in Amharic, Tigrinya and other Ethiopian languages — read online or download.',
