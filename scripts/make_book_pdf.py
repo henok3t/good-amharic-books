@@ -44,6 +44,7 @@ h2.chapter { break-before: page; string-set: chapter content(text); bookmark-lev
 h3 { font-size: 12pt; margin: 5mm 0 2mm; color: #173a2c; bookmark-level: 2; break-after: avoid; line-height: 1.4; }
 p { margin: 0 0 1.4mm; text-indent: 1.3em; text-align: justify; orphans: 2; widows: 2; }
 p.c { text-align: center; text-indent: 0; }
+p.li { text-indent: -1.1em; padding-left: 1.1em; }
 h2.chapter + p, h3 + p { text-indent: 0; }
 .pg { float: right; margin-right: -13mm; width: 10mm; text-align: left; font: 6.5pt 'Noto Sans Ethiopic'; color: #a59a86; text-indent: 0; }
 .end { text-align: center; margin-top: 10mm; color: #7a6a50; }
@@ -89,7 +90,9 @@ def build_html(book, text, cover):
             if b['t'] == 'h1': out.append(f'<h2 class="chapter"{idattr}>{m}{x}</h2>')
             elif b['t'] == 'h2': out.append(f'<h3{idattr}>{m}{x}</h3>')
             elif b['t'] == 'c': out.append(f'<p class="c"{idattr}>{m}{x}</p>')
-            else: out.append(f'<p{idattr}>{m}{x}'); open_p = True
+            else:
+                li = re.match(r'^([—–•-]\s|([ሀ-ፐ]|\d{1,2}(ኛ)?)[./)]\s?)', b['x'])
+                out.append(f'<p{idattr}{" class=\"li\"" if li else ""}>{m}{x}'); open_p = True
     if open_p: out.append('</p>')
     out.append('<p class="end">❖ ❖ ❖</p></main></body></html>')
     return ''.join(out)

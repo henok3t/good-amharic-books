@@ -54,7 +54,8 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
     if (b.t === 'pre') return `<pre class="r-pre">${x}</pre>`;
     if (b.t === 'toc') return `<nav class="r-tocblock"><ol>${text.toc.map((t) => `<li class="lvl${t.level}"><button data-go="${t.page}"><span>${esc(t.title)}</span><small>${esc(pageLabel(t.page))}</small></button></li>`).join('')}</ol></nav>`;
     if (b.t === 'c') return `<p class="r-c">${x}</p>`;
-    return `<p class="${b.cont ? 'cont' : ''}">${x}</p>`;
+    const li = !b.cont && /^([—–•-]\s|([ሀ-ፐ]|\d{1,2}(ኛ)?)[./)]\s?)/.test(b.x);
+    return `<p class="${b.cont ? 'cont' : ''}${li ? ' li' : ''}">${x}</p>`;
   }
   const pageHtml = (p, i, marks) => `<section class="r-page" data-i="${i}" id="rp-${i}">
       <button class="r-pno" data-orig="${i}" title="${esc(tr('original'))}"><span>${esc(pageLabel(i))}</span></button>

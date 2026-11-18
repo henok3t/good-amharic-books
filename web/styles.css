@@ -346,3 +346,4 @@ html[lang="am"] .reading h1 { font-family: var(--ethi); }
 .r-tocblock button:hover { color: var(--r-accent); }
 .r-tocblock small { flex: none; font: 600 .8em var(--font); color: var(--r-muted); }
 @media (max-width: 760px) { .r-book { padding-top: 4px; } .r-sheet { border-radius: 0; } }
+.r-text p.li { text-indent: -1.1em; padding-left: 1.1em; }
