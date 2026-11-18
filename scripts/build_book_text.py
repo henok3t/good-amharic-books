@@ -320,7 +320,7 @@ def use_clean_contents(pages, toc, book_id, first_body):
     for e in entries:
         title = (f"ምዕራፍ {e['num']} · " if e['level'] == 1 and e.get('num') else (e['num'] + ' ' if e.get('num') else '')) + e['title']
         want = fold(e['title']); guess = max(near(e['page']), last)
-        best = (0, None, None, None)
+        best = (0, None, None, None); loose = (0, None, None, None)
         window = range(max(first_body, guess - 4), min(len(pages), guess + 5))
         chapter_heads = e['level'] == 1 and e.get('num') and any(b['t'] == 'h1' and b['x'].startswith('ምዕራፍ') for i in window if i >= last for b in pages[i]['blocks'])
         for i in window:
@@ -333,10 +333,17 @@ def use_clean_contents(pages, toc, book_id, first_body):
                     nums = {e.get('num', '-'), eth_num(e.get('num', ''))}
                     score = 100 if any(re.search(r'ምዕራፍ\s*' + re.escape(n) + r'(?![\d፩-፼])', b['x']) for n in nums if n) else max(88, fuzz.partial_ratio(want, head))
                 else: score = fuzz.partial_ratio(want, head) if len(want) >= 3 else (100 if head.startswith(want) else 0)
+                raw = score
                 score -= abs(i - guess) * 1.5                    # prefer the expected page
                 if b['t'] in ('h1', 'h2'): score += 4
                 if score > best[0]: best = (score, i, k, b)
+                if b['t'] == 'h2' and raw >= 60 and abs(i - guess) <= 2 and raw > loose[0]: loose = (raw, i, k, b)
         score, i, k, b = best
+        if (b is None or score < 78) and loose[3] is not None and e['level'] == 2:
+            # the body words the section heading differently: link to it, keep the printed wording
+            _, i, k, b = loose
+            out.append({'title': title, 'level': 2, 'page': i, '_blk': b}); last = i
+            continue
         if b is not None and score >= 78:
             if e['level'] == 1:
                 if b['t'] != 'h1' and len(b['x']) > len(e['title']) + 30: pages[i]['blocks'].insert(k, {'t': 'h1', 'x': title})
@@ -483,6 +490,13 @@ def main(book_id, ocr_dir):
     for p in pages:
         for b in p['blocks']: b.pop('nocont', None); b.pop('forcecont', None)
     for p in pages: p.pop('_lines', None)
+    for t in toc:                                        # the heading block each contents entry points at (reader jumps there)
+        blk = t.pop('_blk', None)
+        if t['page'] >= len(pages): continue
+        bl = pages[t['page']]['blocks']
+        k = next((k for k, b in enumerate(bl) if b is blk), None) if blk is not None else None
+        if k is None: k = next((k for k, b in enumerate(bl) if b['x'] == t['title']), None)
+        if k is not None: t['b'] = k
     out = {'id': book_id, 'titleAm': book['titleAm'], 'titleEn': book['titleEn'], 'author': book['author'], 'engine': 'cloud-vision',
            'pages': pages, 'toc': toc}
     os.makedirs(os.path.join(ROOT, 'data/text'), exist_ok=True)
