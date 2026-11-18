@@ -43,7 +43,7 @@ export function scanUrl(file, page) {
   if (__DEV__) return Promise.resolve(`/dev/scans/${file.replace(/\.[^.]+$/, '')}/${page}.webp`);
   return storageUrl(`scans/${file.replace(/\.[^.]+$/, '')}/${page}.webp`); }
 export function pdfUrl(id, kind) {
-  if (__DEV__) return Promise.resolve(`/dev/pdf/${id}-${kind}.pdf`);
+  if (__DEV__) return fetch(`/dev/pdf/${id}-${kind}.pdf`).then((r) => r.blob()).then((b) => URL.createObjectURL(b));
   return storageUrl(`pdf/${id}-${kind}.pdf`);
 }
 export async function loadText(id) {

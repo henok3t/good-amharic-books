@@ -19,6 +19,19 @@ gcloud storage cp -r gs://good-amharic-books-web.firebasestorage.app/ocr/vision/
 python3 scripts/build_book_text.py 1011 ./ocr/vision && python3 scripts/build_catalog.py
 ```
 
+Then proofread and publish:
+
+```bash
+# per-page corrections (from comparing each page with its scan) and a clean contents list
+python3 scripts/merge_corrections.py 1011 ./review/corr data/corrections/1011.extra.json   # -> data/corrections/1011.json
+#   data/corrections/1011-toc.json: contents transcribed from the printed contents pages
+python3 scripts/build_book_text.py 1011 ./ocr/vision         # applies both; failures -> data/corrections/1011.failed.json
+python3 scripts/make_book_pdf.py 1011 data/pdf --cover cover.jpg --scans amid-1.PDF amid-2.PDF
+python3 scripts/build_catalog.py                              # flags hasText / pdfText / pdfScan
+```
+
+Upload `data/text/<id>.json`, `data/pdf/<id>-*.pdf` and `data/catalog.json` to the bucket (`text/`, `pdf/`, `catalog/`).
+
 OCR test (12 hand-checked pages): Cloud Vision about 1.6% character errors, Tesseract about 4.9%.
 
 ## Layout
@@ -35,6 +48,8 @@ OCR test (12 hand-checked pages): Cloud Vision about 1.6% character errors, Tess
 | `functions/index.js` | Cloud Functions: `mirrorBatch` (copy files from the old site), `countPages` (PDF page counts) |
 | `scripts/ocr_vision.py` | OCR book PDFs with Cloud Vision straight from the bucket |
 | `scripts/build_book_text.py` | Turn OCR output into a readable book (`text/<id>.json`): spreads split, headers removed, words rejoined, contents parsed |
+| `scripts/make_book_pdf.py` | Typeset A5 text-edition PDF (cover, linked contents, bookmarks, original page numbers) and merged scan PDF |
+| `scripts/merge_corrections.py` | Merge proofreading correction files |
 | `scripts/render_scans.py` | Page images of the scans for the reader's "original page" view (`scans/<file>/<page>.webp`) |
 | `storage.rules` | Who may read the private bucket |
 

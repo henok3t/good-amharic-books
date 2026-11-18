@@ -342,7 +342,8 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
       bms = bms.some((x) => x.page === current) ? bms.filter((x) => x.page !== current) : [...bms, { page: current, ts: Date.now() }].sort((a, c) => a.page - c.page);
       local.set(bmKey, bms); updatePos();
     } else if (act === 'pdf') {
-      const a = document.createElement('a'); a.href = await pdf(); a.download = `${book.titleAm || book.id}.pdf`; a.click();
+      const a = document.createElement('a'); a.href = await pdf();
+      a.download = `${(book.titleEn || `Book ${book.id}`).replace(/[^\w .,'()-]+/g, '').trim() || `Book ${book.id}`}.pdf`; a.click();
     } else if (act === 'offline') {
       b.disabled = true; b.textContent = tr('downloading');
       await (offline.has() ? offline.remove() : offline.save()); renderSettings();

@@ -40,7 +40,7 @@ body { margin: 0; }
 .contents li.l2 { padding-left: 7mm; font-size: 9.3pt; color: #333; }
 .contents a { color: inherit; text-decoration: none; }
 .contents a::after { content: leader('.') target-counter(attr(href), page); }
-h2.chapter { break-before: page; string-set: chapter content(text); bookmark-level: 1; padding-top: 6mm; }
+h2.chapter { break-before: page; string-set: chapter attr(data-title); bookmark-level: 1; padding-top: 6mm; }
 h3 { font-size: 12pt; margin: 5mm 0 2mm; color: #173a2c; bookmark-level: 2; break-after: avoid; line-height: 1.4; }
 p { margin: 0 0 1.4mm; text-indent: 1.3em; text-align: justify; orphans: 2; widows: 2; }
 p.c { text-align: center; text-indent: 0; }
@@ -87,7 +87,7 @@ def build_html(book, text, cover):
             if open_p: out.append('</p>'); open_p = False
             ids = [anchors[key] for key in anchors if key[0] == i and key[1] == b['x']]
             idattr = f' id="{ids[0]}"' if ids else ''
-            if b['t'] == 'h1': out.append(f'<h2 class="chapter"{idattr}>{m}{x}</h2>')
+            if b['t'] == 'h1': out.append(f'<h2 class="chapter" data-title="{x}"{idattr}>{m}{x}</h2>')
             elif b['t'] == 'h2': out.append(f'<h3{idattr}>{m}{x}</h3>')
             elif b['t'] == 'c': out.append(f'<p class="c"{idattr}>{m}{x}</p>')
             else:

@@ -216,7 +216,9 @@ async function downloadPdf(btn) {
   try {
     const url = await pdfUrl(bk.id, kind);
     const a = document.createElement('a'); a.href = url;
-    a.download = `${bk.titleAm || bk.titleEn || bk.id}${kind === 'scan' ? ' (scan)' : ''}.pdf`; a.click();
+    // ASCII file name: some browsers drop non-Latin download names
+    const base = (bk.titleEn || `Book ${bk.id}`).replace(/[^\w .,'()-]+/g, '').trim() || `Book ${bk.id}`;
+    a.download = `${base}${kind === 'scan' ? ' (original scans)' : ''}.pdf`; a.click();
   } catch { alert(t('notCopied')); }
   finally { btn.disabled = false; btn.textContent = label; }
 }

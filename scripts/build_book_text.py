@@ -458,6 +458,8 @@ def main(book_id, ocr_dir):
     for t in toc: t['page'] = shift(t['page'])
 
     fixed = apply_corrections(pages, book_id)
+    for p in pages:                                      # a bullet between Ethiopic words is a misread ፥ (clause separator)
+        for b in p['blocks']: b['x'] = re.sub(r'(?<=[\u1200-\u137F]) • (?=[\u1200-\u137F“«])', ' ፥ ', b['x'])
     toc = use_clean_contents(pages, toc, book_id, first_body - len(cidx[1:]) if cidx else 0)
     chapters = [] if os.path.exists(os.path.join(ROOT, f'data/corrections/{book_id}-toc.json')) else \
         [t for t in toc if t['level'] == 1 and t['title'].startswith('ምዕራፍ')]
