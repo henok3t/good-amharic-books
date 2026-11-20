@@ -54,6 +54,23 @@ Problems met so far, why they happen, and what fixes them. Read this when someth
 - Some browsers drop non-Latin download file names → PDF downloads use the English title.
 - `[hidden]` doesn't hide an element whose CSS sets `display` → `.reader [hidden] { display: none !important }`.
 
+## Lessons from መድሎተ ጽድቅ (book 1289, 473 pages, 24 + 12 helpers)
+- **The library's copy can be incomplete.** Its last PDF ended at printed page 476 while the contents runs to 519. Check the
+  catalog's part labels ("Part 9 - Pages 426 - 476") against the contents. Entries printed more than two pages after the last
+  page label are marked `absent` and shown greyed ("not in the scanned copy"); tell the user.
+- **Running header with the page number in it** (header row "መድሎተ ጽድቅ 296"): the builder detects a repeated first line
+  (`HEADER_TEXT`), takes the page label from that row and ignores bottom numbers, which here are footnote numbers.
+- **Footnotes**: books with many small-type notes at the page bottom get `fn` blocks; the reader and PDF show them after the
+  paragraph they interrupt. Old INSTRUCTIONS copies lacked `fn`/`cont`, so helpers wrote "no op for that" in their notes:
+  collect those (cross-page joins, footnote retypes, stray blocks) into `<id>.extra.json` as you read each report.
+- **Book-wide fixes** go in `<id>.extra.json` as `{"page": "*", "op": "sub", "pattern": regex, "with": ...}` (applied after the
+  page operations, e.g. the magazine name ጮራ read as "(ራ", bullet glyphs ◎ © ○ ☞ unified to ◉).
+- **Decorative heading fonts** can't be read even on the scan (chapter 1's title prints as "መኃትው"); keep the printed form
+  and report it rather than guessing. Chapters printed without a title show as just "ምዕራፍ 2".
+- **Duplicate scans** at part boundaries (part 7 ends and part 8 starts on the same printed page): delete one copy's blocks.
+- **Concurrency**: at most 20 helpers at a time; start the rest as reports come in. Starting the language review only after
+  every scan group is merged keeps the block texts stable.
+
 ## Privacy and safety
 - The repo is public: no book text, catalog data or corrections in git (`data/` is ignored), no email addresses anywhere.
   Storage rules list Firebase UIDs; a privacy check blocks commands that write an email address into files.
