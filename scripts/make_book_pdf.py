@@ -57,6 +57,9 @@ p.c { text-align: center; text-indent: 0; }
 p.li { text-indent: -1.1em; padding-left: 1.1em; }
 h2.chapter + p, h3 + p { text-indent: 0; }
 .pg { float: right; margin-right: -13mm; width: 10mm; text-align: left; font: 6.5pt 'Noto Sans Ethiopic'; color: #a59a86; text-indent: 0; }
+.tbl { border-collapse: collapse; width: 100%; margin: 2mm 0 3mm; font-size: 8.6pt; line-height: 1.4; }
+.tbl td { border: 0.4pt solid #c9b98f; padding: 1mm 1.5mm; vertical-align: top; }
+.tbl tr:first-child td { background: #f3ecd9; font-weight: bold; }
 .end { text-align: center; margin-top: 10mm; color: #7a6a50; }
 """
 
@@ -85,7 +88,7 @@ def build_html(book, text, cover):
          f'<li class="l{t["level"]}"><a href="#{anchors[(t["page"], t["title"])]}">{esc(t["title"])}</a></li>') for t in toc
         if t['page'] >= first_body) + '</ol></section>')
     out.append('<main>')
-    open_p, notes = False, []
+    open_p, open_t, notes = False, False, []
     for i in range(first_body, len(pages)):
         p = pages[i]
         mark = ''                                            # no printed page numbers: this edition paginates itself
@@ -99,6 +102,11 @@ def build_html(book, text, cover):
             m = mark if k == 0 else ''
             if b['t'] == 'p' and b.get('cont') and k == 0 and open_p:
                 out.append(f' {m}{x}'); continue               # paragraph continues across the page turn
+            if b['t'] == 'p' and ' | ' in b['x']:              # rebuilt tables: "a | b | c" rows
+                if open_p: out.append('</p>'); open_p = False
+                if not open_t: out.append('<table class="tbl"><tbody>'); open_t = True
+                out.append('<tr>' + ''.join(f'<td>{m if n == 0 else ""}{c}</td>' for n, c in enumerate(x.split(' | '))) + '</tr>'); continue
+            if open_t: out.append('</tbody></table>'); open_t = False
             if open_p: out.append('</p>'); open_p = False
             if notes: out.append('<div class="fn">' + ''.join(f'<p>{n}</p>' for n in notes) + '</div>'); notes = []
             ids = [anchors[key] for key in anchors if key[0] == i and key[1] == b['x']]
@@ -110,6 +118,7 @@ def build_html(book, text, cover):
                 li = re.match(r'^([—–•-]\s|([ሀ-ፐ]|\d{1,2}(ኛ)?)[./)]\s?)', b['x'])
                 out.append(f'<p{idattr}{" class=\"li\"" if li else ""}>{m}{x}'); open_p = True
     if open_p: out.append('</p>')
+    if open_t: out.append('</tbody></table>')
     if notes: out.append('<div class="fn">' + ''.join(f'<p>{n}</p>' for n in notes) + '</div>')
     out.append('<p class="end">❖ ❖ ❖</p></main></body></html>')
     return ''.join(out)
