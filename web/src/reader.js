@@ -56,7 +56,7 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
 
   // ---------- flowing text ----------
   function markText(raw, m) { return m ? esc(raw.slice(0, m.at)) + `<mark>${esc(raw.slice(m.at, m.at + m.len))}</mark>` + esc(raw.slice(m.at + m.len)) : esc(raw); }
-  const TABLE_ROW = / \| /;
+  const TABLE_ROW = / \| |^\| /;
   function flowHtml(a, b, mark) {
     let html = '', openP = false, openT = false, notes = '';   // footnotes wait until the paragraph they interrupt has ended
     const closeP = () => { if (openP) { html += '</p>'; openP = false; } if (openT) { html += '</tbody></table></div>'; openT = false; }
@@ -73,7 +73,7 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
         if (blk.t === 'p' && TABLE_ROW.test(blk.x)) {                 // "a | b | c" rows (rebuilt tables) become a real table
           if (openP) closeP();
           if (!openT) { html += '<div class="r-tablewrap"><table class="r-table"><tbody>'; openT = true; }
-          html += `<tr id="${id}">${x.split(' | ').map((c, n) => `<td>${n ? '' : m}${c}</td>`).join('')}</tr>`; return;
+          html += `<tr id="${id}">${x.split(/ \| |^\| /).map((c, n) => `<td>${n ? '' : m}${c}</td>`).join('')}</tr>`; return;
         }
         closeP();
         if (blk.t === 'h1') html += `<h2 class="r-h1" id="${id}">${m}${x}</h2>`;

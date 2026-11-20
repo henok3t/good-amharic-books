@@ -102,10 +102,10 @@ def build_html(book, text, cover):
             m = mark if k == 0 else ''
             if b['t'] == 'p' and b.get('cont') and k == 0 and open_p:
                 out.append(f' {m}{x}'); continue               # paragraph continues across the page turn
-            if b['t'] == 'p' and ' | ' in b['x']:              # rebuilt tables: "a | b | c" rows
+            if b['t'] == 'p' and re.search(r' \| |^\| ', b['x']):              # rebuilt tables: "a | b | c" rows
                 if open_p: out.append('</p>'); open_p = False
                 if not open_t: out.append('<table class="tbl"><tbody>'); open_t = True
-                out.append('<tr>' + ''.join(f'<td>{m if n == 0 else ""}{c}</td>' for n, c in enumerate(x.split(' | '))) + '</tr>'); continue
+                out.append('<tr>' + ''.join(f'<td>{m if n == 0 else ""}{c}</td>' for n, c in enumerate(re.split(r' \| |^\| ', x))) + '</tr>'); continue
             if open_t: out.append('</tbody></table>'); open_t = False
             if open_p: out.append('</p>'); open_p = False
             if notes: out.append('<div class="fn">' + ''.join(f'<p>{n}</p>' for n in notes) + '</div>'); notes = []

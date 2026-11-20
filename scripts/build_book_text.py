@@ -308,18 +308,28 @@ def apply_corrections(pages, book_id):
     ops: replace {find, with} | type {find, t} | merge {find} (into previous block) | split {find} (new paragraph at find)
          delete {find} | insert {after_find|"" , t, x} | noncont {} (first block does not continue the previous page)
          cont {} (first block continues the last paragraph of the previous page)
-    optional on find-ops: "nth" (0-based, which matching block) and "t_was" (only blocks of that type)"""
+    optional on find-ops: "nth" (0-based, which matching block), "t_was" (only blocks of that type), "exact" (whole block)
+    sub {pattern, with} with page "*": regex replacement over every block (book-wide misreadings, bullet glyphs)"""
     path = os.path.join(ROOT, f'data/corrections/{book_id}.json')
     if not os.path.exists(path): return 0
     by_key = {f"{p['src']['file']}:{p['src']['page']}:{p['src']['half']}": p for p in pages}
     done, failed = 0, []
     for c in json.load(open(path)):
         if 'op' not in c: continue
+        if c['op'] == 'sub':                               # book-wide regex fix: {"page": "*", "op": "sub", "pattern", "with"}
+            n = 0
+            for pg in pages:
+                for blk in pg['blocks']:
+                    blk['x'], m = re.subn(c['pattern'], c['with'], blk['x']); n += m
+            done += 1 if n else 0
+            if not n: failed.append(c)
+            continue
         p = by_key.get(c['page'])
         if not p: failed.append(c); continue
         bl = p['blocks']
         find = c.get('find', '')
-        hits = [i for i, b in enumerate(bl) if find and find in b['x'] and ('t_was' not in c or b['t'] == c['t_was'])]
+        hits = [i for i, b in enumerate(bl) if find and (b['x'].strip() == find if c.get('exact') else find in b['x'])
+                and ('t_was' not in c or b['t'] == c['t_was'])]
         k = hits[c.get('nth', 0)] if len(hits) > c.get('nth', 0) else None      # nth / t_was pick among repeated texts
         op = c['op']
         if op == 'replace' and k is not None: bl[k]['x'] = bl[k]['x'].replace(find, c['with']); done += 1
@@ -372,9 +382,9 @@ def use_clean_contents(pages, toc, book_id, first_body):
     max_label = max(label_idx) if label_idx else 0
     for e in entries:
         if max_label and e["page"] > max_label + 2:            # printed after the last scanned page: not in this copy
-            title = (f"ምዕራፍ {e['num']} · " if e['level'] == 1 and e.get('num') else (e['num'] + ' ' if e.get('num') else '')) + e['title']
+            title = ((f"ምዕራፍ {e['num']}" + (' · ' if e['title'] else '')) if e['level'] == 1 and e.get('num') else (e['num'] + ' ' if e.get('num') else '')) + e['title']
             out.append({'title': title, 'level': e['level'], 'page': len(pages) - 1, 'absent': True}); continue
-        title = (f"ምዕራፍ {e['num']} · " if e['level'] == 1 and e.get('num') else (e['num'] + ' ' if e.get('num') else '')) + e['title']
+        title = ((f"ምዕራፍ {e['num']}" + (' · ' if e['title'] else '')) if e['level'] == 1 and e.get('num') else (e['num'] + ' ' if e.get('num') else '')) + e['title']
         want = fold(e['title']); guess = max(near(e['page']), last)
         best = (0, None, None, None); loose = (0, None, None, None)
         window = range(max(first_body, guess - 4), min(len(pages), guess + 5))
