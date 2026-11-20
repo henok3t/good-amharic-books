@@ -449,6 +449,8 @@ def use_clean_contents(pages, toc, book_id, first_body):
             if bl[k]['t'] == 'h1' and bl[k]['x'] not in titles and re.fullmatch(r'ምዕራፍ\s*\S{1,3}\s*[·፥:፡]?\s*', bl[k]['x']) \
                     and k + 1 < len(bl) and bl[k + 1]['x'] in titles:
                 bl.pop(k)
+            elif bl[k]['t'] in ('h1', 'h2') and k + 1 < len(bl) and bl[k + 1]['t'] == bl[k]['t'] and bl[k + 1]['x'] == bl[k]['x']:
+                bl.pop(k)                                  # the same heading twice in a row (proofread + clean contents)
     return out
 
 # ---------- main ----------
