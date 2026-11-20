@@ -307,7 +307,8 @@ def apply_corrections(pages, book_id):
     """data/corrections/<id>.json: [{"page": "<file>:<pdf page>:<half>", "op": ..., ...}]
     ops: replace {find, with} | type {find, t} | merge {find} (into previous block) | split {find} (new paragraph at find)
          delete {find} | insert {after_find|"" , t, x} | noncont {} (first block does not continue the previous page)
-         cont {} (first block continues the last paragraph of the previous page)"""
+         cont {} (first block continues the last paragraph of the previous page)
+    optional on find-ops: "nth" (0-based, which matching block) and "t_was" (only blocks of that type)"""
     path = os.path.join(ROOT, f'data/corrections/{book_id}.json')
     if not os.path.exists(path): return 0
     by_key = {f"{p['src']['file']}:{p['src']['page']}:{p['src']['half']}": p for p in pages}
@@ -318,7 +319,8 @@ def apply_corrections(pages, book_id):
         if not p: failed.append(c); continue
         bl = p['blocks']
         find = c.get('find', '')
-        k = next((i for i, b in enumerate(bl) if find and find in b['x']), None)
+        hits = [i for i, b in enumerate(bl) if find and find in b['x'] and ('t_was' not in c or b['t'] == c['t_was'])]
+        k = hits[c.get('nth', 0)] if len(hits) > c.get('nth', 0) else None      # nth / t_was pick among repeated texts
         op = c['op']
         if op == 'replace' and k is not None: bl[k]['x'] = bl[k]['x'].replace(find, c['with']); done += 1
         elif op == 'type' and k is not None: bl[k]['t'] = c['t']; done += 1
