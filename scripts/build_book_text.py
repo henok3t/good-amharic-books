@@ -367,7 +367,11 @@ def use_clean_contents(pages, toc, book_id, first_body):
                 if c in label_idx: return label_idx[c]
         return first_body
     out, last = [], first_body
+    max_label = max(label_idx) if label_idx else 0
     for e in entries:
+        if max_label and e["page"] > max_label + 2:            # printed after the last scanned page: not in this copy
+            title = (f"ምዕራፍ {e['num']} · " if e['level'] == 1 and e.get('num') else (e['num'] + ' ' if e.get('num') else '')) + e['title']
+            out.append({'title': title, 'level': e['level'], 'page': len(pages) - 1, 'absent': True}); continue
         title = (f"ምዕራፍ {e['num']} · " if e['level'] == 1 and e.get('num') else (e['num'] + ' ' if e.get('num') else '')) + e['title']
         want = fold(e['title']); guess = max(near(e['page']), last)
         best = (0, None, None, None); loose = (0, None, None, None)
@@ -552,7 +556,7 @@ def main(book_id, ocr_dir):
     for p in pages: p.pop('_lines', None)
     for t in toc:                                        # the heading block each contents entry points at (reader jumps there)
         blk = t.pop('_blk', None)
-        if t['page'] >= len(pages): continue
+        if t['page'] >= len(pages) or t.get('absent'): continue
         bl = pages[t['page']]['blocks']
         k = next((k for k, b in enumerate(bl) if b is blk), None) if blk is not None else None
         if k is None: k = next((k for k, b in enumerate(bl) if b['x'] == t['title']), None)

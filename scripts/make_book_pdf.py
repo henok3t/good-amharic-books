@@ -47,6 +47,8 @@ body { margin: 0; }
 .fn p { font-size: 7.8pt; line-height: 1.45; text-indent: 0; text-align: left; margin: 0 0 1mm; color: #444; }
 h4 { font-size: 11pt; margin: 4mm 0 1.5mm; color: #173a2c; bookmark-level: 3; break-after: avoid; line-height: 1.4; }
 .contents a { color: inherit; text-decoration: none; }
+.contents li.absent { color: #999; }
+.contents .abs { float: right; font-size: 7pt; color: #aaa; }
 .contents a::after { content: leader('.') target-counter(attr(href), page); }
 h2.chapter { break-before: page; string-set: chapter attr(data-title); bookmark-level: 1; padding-top: 6mm; }
 h3 { font-size: 12pt; margin: 5mm 0 2mm; color: #173a2c; bookmark-level: 2; break-after: avoid; line-height: 1.4; }
@@ -79,7 +81,8 @@ def build_html(book, text, cover):
     front = [f for f in front if f]
     if front: out.append('<section class="front">' + '<p class="orn">✻</p>'.join(f'<div class="fpart">{f}</div>' for f in front) + '</section>')
     out.append('<section class="contents"><h2>ማውጫ</h2><ol>' + ''.join(
-        f'<li class="l{t["level"]}"><a href="#{anchors[(t["page"], t["title"])]}">{esc(t["title"])}</a></li>' for t in toc
+        (f'<li class="l{t["level"]} absent">{esc(t["title"])}<span class="abs">በተቃኘው ቅጂ የለም · not in the scanned copy</span></li>' if t.get('absent') else
+         f'<li class="l{t["level"]}"><a href="#{anchors[(t["page"], t["title"])]}">{esc(t["title"])}</a></li>') for t in toc
         if t['page'] >= first_body) + '</ol></section>')
     out.append('<main>')
     open_p, notes = False, []

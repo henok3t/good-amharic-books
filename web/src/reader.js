@@ -26,7 +26,7 @@ const L = {
     ocrNote: 'Converted from a scanned book and proofread. To compare any passage with the printed book, tap 📄 above.',
     pdf: 'Download as PDF (text edition)', fullSpread: 'Show both pages', mode: 'Layout', book: 'Book (turn pages)', scroll: 'Scroll',
     tapHint: 'Tap the edges or swipe to turn the page', openImage: 'Open image', close: 'Close', printed: 'printed page',
-    fullscreen: 'Full screen', fsIos: 'iPhone and iPad don\u2019t allow full screen for web pages. For full-screen reading, add this site to your home screen: tap Share, then “Add to Home Screen”, and open it from there.' },
+    absent: 'not in the scanned copy', fullscreen: 'Full screen', fsIos: 'iPhone and iPad don\u2019t allow full screen for web pages. For full-screen reading, add this site to your home screen: tap Share, then “Add to Home Screen”, and open it from there.' },
   am: { contents: 'ማውጫ', bookmarks: 'ምልክቶች', search: 'በዚህ መጽሐፍ ውስጥ ፈልግ', settings: 'የንባብ ቅንብሮች', page: 'ገጽ',
     original: 'ዋናው ገጽ', noBookmarks: 'እስካሁን ምልክት የለም። ያሉበትን ቦታ ለማስቀመጥ ☆ን ይንኩ።', results: '{n} ውጤቶች',
     noResults: 'ምንም አልተገኘም።', size: 'የፊደል መጠን', spacing: 'የመስመር ክፍተት', font: 'ፊደል', theme: 'ገጽታ', width: 'ስፋት', justify: 'ጽሑፉን አስተካክል',
@@ -35,7 +35,7 @@ const L = {
     ocrNote: 'ከተቃኘ መጽሐፍ ተቀይሮ የተገመገመ ነው። ማንኛውንም ክፍል ከታተመው መጽሐፍ ጋር ለማነጻጸር ከላይ 📄ን ይንኩ።',
     pdf: 'እንደ PDF አውርድ (የጽሑፍ እትም)', fullSpread: 'ሁለቱንም ገጾች አሳይ', mode: 'አቀማመጥ', book: 'መጽሐፍ (ገጽ መግለጥ)', scroll: 'ማሸብለል',
     tapHint: 'ገጽ ለመግለጥ ጠርዙን ይንኩ ወይም ያንሸራትቱ', openImage: 'ምስሉን ክፈት', close: 'ዝጋ', printed: 'የታተመ ገጽ',
-    fullscreen: 'ሙሉ ገጽ', fsIos: 'iPhone እና iPad ለድረ-ገጾች ሙሉ ገጽ አይፈቅዱም። በሙሉ ገጽ ለማንበብ ይህን ገጽ በመነሻ ገጽዎ ላይ ያክሉ፦ Share ን ይንኩ፣ “Add to Home Screen” ን ይምረጡ፣ ከዚያ ይክፈቱት።' },
+    absent: 'በተቃኘው ቅጂ የለም', fullscreen: 'ሙሉ ገጽ', fsIos: 'iPhone እና iPad ለድረ-ገጾች ሙሉ ገጽ አይፈቅዱም። በሙሉ ገጽ ለማንበብ ይህን ገጽ በመነሻ ገጽዎ ላይ ያክሉ፦ Share ን ይንኩ፣ “Add to Home Screen” ን ይምረጡ፣ ከዚያ ይክፈቱት።' },
 };
 
 export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onExit }) {
@@ -74,7 +74,8 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
         else if (blk.t === 'pre') html += `<pre class="r-pre" id="${id}">${m}${x}</pre>`;
         else if (blk.t === 'c') html += `<p class="r-c" id="${id}">${m}${x}</p>`;
         else if (blk.t === 'toc') html += `<nav class="r-tocblock" id="${id}">${m}<ol>${toc.map((t, n) =>
-          `<li class="lvl${t.level}"><button data-tk="${n}"><span>${esc(t.title)}</span><small data-tkp="${n}">${esc(tocPageText(n))}</small></button></li>`).join('')}</ol></nav>`;
+          (t.absent ? `<li class="lvl${t.level} absent"><button disabled><span>${esc(t.title)}</span><small>${esc(tr('absent'))}</small></button></li>`
+            : `<li class="lvl${t.level}"><button data-tk="${n}"><span>${esc(t.title)}</span><small data-tkp="${n}">${esc(tocPageText(n))}</small></button></li>`)).join('')}</ol></nav>`;
         else { html += `<p id="${id}"${LIST_ITEM.test(blk.x) ? ' class="li"' : ''}>${m}${x}`; openP = true; }
       });
     }
@@ -170,7 +171,7 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
   body.addEventListener('click', (e) => { if (!e.target.closest('button, a') && !String(getSelection()).length) el.classList.toggle('immersive'); });
 
   // ---------- book mode: chapters set in columns; one column = one page (two per view on wide screens) ----------
-  const chapterStarts = [...new Set([0, ...toc.filter((t) => t.level === 1).map((t) => t.page)])].sort((a, b) => a - b);
+  const chapterStarts = [...new Set([0, ...toc.filter((t) => t.level === 1 && !t.absent).map((t) => t.page)])].sort((a, b) => a - b);
   if (chapterStarts.length < 2) for (let k = 12; k < pages.length; k += 12) chapterStarts.push(k);
   const chapterOf = (i) => chapterStarts.reduce((a, s, k) => (s <= i ? k : a), 0);
   const chapterHtml = (k, mark) => {
@@ -296,7 +297,9 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
     const bms = local.get(bmKey, []);
     const activeIdx = toc.reduce((a, t, k) => (t.page <= current ? k : a), 0);
     panelEl.innerHTML = `${panelHead(tr('contents'))}
-      <ol class="rp-toc">${toc.map((t, k) => `<li class="lvl${t.level} ${k === activeIdx ? 'on' : ''}"><button data-tk="${k}"><span>${esc(t.title)}</span><small>${esc(tocPageText(k))}</small></button></li>`).join('')}</ol>
+      <ol class="rp-toc">${toc.map((t, k) => t.absent
+        ? `<li class="lvl${t.level} absent"><button disabled><span>${esc(t.title)}</span><small>${esc(tr('absent'))}</small></button></li>`
+        : `<li class="lvl${t.level} ${k === activeIdx ? 'on' : ''}"><button data-tk="${k}"><span>${esc(t.title)}</span><small>${esc(tocPageText(k))}</small></button></li>`).join('')}</ol>
       <h4 class="rp-sub">${esc(tr('bookmarks'))}</h4>
       ${bms.length ? `<ol class="rp-toc">${bms.map((b) => `<li><button data-go="${b.page}"><span>★ ${esc(snippet(b.page))}</span></button></li>`).join('')}</ol>` : `<p class="rp-empty">${esc(tr('noBookmarks'))}</p>`}`;
     panelEl.querySelector('.on')?.scrollIntoView({ block: 'center' });
