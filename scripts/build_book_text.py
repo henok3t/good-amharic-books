@@ -518,7 +518,7 @@ def main(book_id, ocr_dir):
         for b in pages[i]['blocks']:
             if b['t'] == 'h2' and len(b['x']) < 30 and not any(t['page'] == i and t['title'] == b['x'] for t in toc):
                 b['x'] = unspace_letters(b['x']); toc.append({'title': b['x'], 'level': 1, 'page': i})
-    toc.sort(key=lambda t: (t['page'], t['level']))
+    toc.sort(key=lambda t: (t['page'], 1, 0) if t.get('absent') else (t['page'], 0, t['level']))   # absent entries keep printed order
     if not toc:                                          # no printed contents: chapter headings found in the text
         toc = [{'title': b['x'], 'level': 1, 'page': i} for i, p in enumerate(pages) for b in p['blocks'] if b['t'] == 'h1']
 
@@ -556,7 +556,7 @@ def main(book_id, ocr_dir):
             if bl and bl[0]['t'] in ('h2', 'p') and re.match(r'^ምዕ', bl[0]['x']) and len(bl[0]['x']) < 60: bl.pop(0)
             bl.insert(0, {'t': 'h1', 'x': t['title']})
     for t in toc: t.pop('_used', None)
-    toc.sort(key=lambda t: (t['page'], t['level']))
+    toc.sort(key=lambda t: (t['page'], 1, 0) if t.get('absent') else (t['page'], 0, t['level']))   # absent entries keep printed order
     for a, b in zip(pages, pages[1:]):                   # paragraph continuing onto the next page (footnotes in between are skipped)
         last = next((x for x in reversed(a['blocks']) if x['t'] != 'fn'), None)
         first = b['blocks'][0] if b['blocks'] else None

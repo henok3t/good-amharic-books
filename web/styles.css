@@ -367,6 +367,8 @@ html[lang="am"] .reading h1 { font-family: var(--ethi); }
 .r-tocblock li.lvl5 button, .r-tocblock li.lvl6 button { padding-left: 4.8em; font-size: .7em; color: var(--r-muted); }
 .rp-toc li.absent button, .r-tocblock li.absent button { opacity: .45; cursor: default; }
 .r-tablewrap { overflow-x: auto; margin: .6em 0 1em; break-inside: avoid; }
-.r-table { border-collapse: collapse; width: 100%; font-size: .86em; line-height: 1.45; }
-.r-table td { border: 1px solid var(--line, #d9cfb4); padding: .3em .5em; vertical-align: top; }
+.r-table { border-collapse: collapse; width: 100%; font-size: .8em; line-height: 1.35; overflow-wrap: break-word; }
+.r-table.c4 { font-size: .7em; } .r-table.c6 { font-size: .58em; }
+.r-table.c6 td { overflow-wrap: anywhere; padding: .2em .25em; }
+.r-table td { border: 1px solid var(--line, #d9cfb4); padding: .25em .35em; vertical-align: top; }
 .r-table tr:first-child td { background: rgba(200, 170, 100, .14); font-weight: 600; }

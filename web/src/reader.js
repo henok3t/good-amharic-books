@@ -72,7 +72,8 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
         if (blk.t === 'p' && blk.cont && k === 0 && openP) { html += ` ${m}<span id="${id}">${x}</span>`; return; }  // paragraph runs on across the printed page break
         if (blk.t === 'p' && TABLE_ROW.test(blk.x)) {                 // "a | b | c" rows (rebuilt tables) become a real table
           if (openP) closeP();
-          if (!openT) { html += '<div class="r-tablewrap"><table class="r-table"><tbody>'; openT = true; }
+          if (!openT) { const n = blk.x.split(/ \| |^\| /).length;
+            html += `<div class="r-tablewrap"><table class="r-table${n >= 6 ? ' c6' : n >= 4 ? ' c4' : ''}"><tbody>`; openT = true; }
           html += `<tr id="${id}">${x.split(/ \| |^\| /).map((c, n) => `<td>${n ? '' : m}${c}</td>`).join('')}</tr>`; return;
         }
         closeP();
