@@ -314,7 +314,7 @@ html[lang="am"] .reading h1 { font-family: var(--ethi); }
 .reader.book .r-bottom { position: absolute; left: 0; right: 0; bottom: 0; }
 .r-book { position: absolute; left: 0; right: 0; top: calc(58px + env(safe-area-inset-top)); bottom: calc(54px + env(safe-area-inset-bottom));
   display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 10px 0 4px; touch-action: pan-y; user-select: text; }
-.r-sheet { position: relative; flex: 1; width: min(100%, 1180px); overflow: hidden; perspective: 2200px;
+.r-sheet { position: relative; flex: 1; width: min(100%, 1180px); overflow: hidden;
   background: var(--r-bg); border-radius: 4px; }
 .r-sheet.spread { width: min(calc(100% - 40px), 1180px); box-shadow: 0 10px 40px rgba(0,0,0,.18), 0 0 0 1px var(--r-line);
   background: linear-gradient(90deg, transparent 49.2%, rgba(0,0,0,.10) 50%, transparent 50.8%), var(--r-bg); }
@@ -332,6 +332,10 @@ html[lang="am"] .reading h1 { font-family: var(--ethi); }
 .r-turn.fwd { transform-origin: left center; }
 .r-turn.back { transform-origin: right center; }
 .r-turn .r-cols { position: absolute; left: 0; top: 0; }
+.r-turn[hidden] { display: none; }
+.r-sheet { touch-action: none; }                 /* book mode: every finger movement is a page gesture */
+.reader.dragging .r-book { user-select: none; -webkit-user-select: none; cursor: grabbing; }
+.r-panel { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; touch-action: pan-y; }
 .r-shade { position: absolute; inset: 0; pointer-events: none; opacity: 0; }
 .r-turn.fwd .r-shade { background: linear-gradient(90deg, rgba(0,0,0,.35), rgba(0,0,0,.05) 40%, rgba(255,255,255,.15)); }
 .r-turn.back .r-shade { background: linear-gradient(270deg, rgba(0,0,0,.35), rgba(0,0,0,.05) 40%, rgba(255,255,255,.15)); }

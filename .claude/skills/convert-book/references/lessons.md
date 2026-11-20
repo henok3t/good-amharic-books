@@ -71,6 +71,14 @@ Problems met so far, why they happen, and what fixes them. Read this when someth
 - **Concurrency**: at most 20 helpers at a time; start the rest as reports come in. Starting the language review only after
   every scan group is merged keeps the block texts stable.
 
+## Reader performance (book mode)
+- Long chapters made the phone reader slow: every chapter is cut into segments of about 9 printed pages at section
+  headings (`segs` in reader.js); page numbers are measured segment by segment in idle time and cached per screen and settings.
+- Move the text strip with Web Animations (a paused animation whose `currentTime` follows the finger), never by setting
+  `style.transform` on every pointer move: on a 20-column strip Chrome re-layered everything each frame (4.5 s of "Layerize"
+  in a 3-swipe trace at 4x CPU slowdown, 20-30 fps) versus 60 fps with the animation.
+- Swipes must work when they start on a button (the contents list); suppress the click after a drag.
+
 ## Privacy and safety
 - The repo is public: no book text, catalog data or corrections in git (`data/` is ignored), no email addresses anywhere.
   Storage rules list Firebase UIDs; a privacy check blocks commands that write an email address into files.

@@ -57,15 +57,16 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
   // ---------- flowing text ----------
   function markText(raw, m) { return m ? esc(raw.slice(0, m.at)) + `<mark>${esc(raw.slice(m.at, m.at + m.len))}</mark>` + esc(raw.slice(m.at + m.len)) : esc(raw); }
   const TABLE_ROW = / \| |^\| /;
-  function flowHtml(a, b, mark) {
+  function flowHtml(a, b, mark, ab = 0, bb = 0) {        // pages a..b-1; starts at block ab of page a; with bb, also page b's first bb blocks
     let html = '', openP = false, openT = false, notes = '';   // footnotes wait until the paragraph they interrupt has ended
     const closeP = () => { if (openP) { html += '</p>'; openP = false; } if (openT) { html += '</tbody></table></div>'; openT = false; }
       if (notes) { html += `<aside class="r-fn">${notes}</aside>`; notes = ''; } };
-    for (let i = a; i < b; i++) {
+    for (let i = a; i < b || (i === b && bb > 0 && i < pages.length); i++) {
       const anchor = `<span class="pm" id="pm-${i}" data-i="${i}"></span>`;
-      const bl = pages[i].blocks;
-      if (!bl.length) { html += anchor; continue; }
+      const bl = pages[i].blocks, from = i === a ? ab : 0, to = i === b ? bb : bl.length;
+      if (!bl.length) { if (!from) html += anchor; continue; }
       bl.forEach((blk, k) => {
+        if (k < from || k >= to) return;
         const id = `b-${i}-${k}`, m = k === 0 ? anchor : '';
         const x = markText(blk.x, mark && mark.page === i && mark.block === k ? mark : null);
         if (blk.t === 'fn') { const n = `<p id="${id}">${m}${x}</p>`; if (openP) notes += n; else html += `<aside class="r-fn">${n}</aside>`; return; }
@@ -103,7 +104,7 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
       <button class="r-icon r-fs" data-act="fs" aria-label="${esc(tr('fullscreen'))}" title="${esc(tr('fullscreen'))}">⛶</button>
     </header>
     <main class="r-body" tabindex="-1"><article class="r-text"></article></main>
-    <div class="r-book" hidden><div class="r-sheet"><div class="r-cols r-text"></div></div><p class="r-hint">${esc(tr('tapHint'))}</p></div>
+    <div class="r-book" hidden><div class="r-sheet"><div class="r-cols r-text"></div><div class="r-turn" hidden><div class="r-cols r-text"></div><i class="r-shade"></i></div></div><p class="r-hint">${esc(tr('tapHint'))}</p></div>
     <footer class="r-bottom">
       <input type="range" min="0" max="${pages.length - 1}" value="${current}" aria-label="${esc(tr('page'))}">
       <span class="r-pos"></span>
@@ -115,7 +116,8 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
   const el = root.querySelector('.reader'), body = el.querySelector('.r-body'), article = el.querySelector('article');
   const range = el.querySelector('input[type=range]'), pos = el.querySelector('.r-pos');
   const panelEl = el.querySelector('.r-panel'), scrim = el.querySelector('.r-scrim');
-  const bookEl = el.querySelector('.r-book'), sheet = el.querySelector('.r-sheet'), cols = el.querySelector('.r-cols');
+  const bookEl = el.querySelector('.r-book'), sheet = el.querySelector('.r-sheet'), cols = sheet.querySelector('.r-cols');
+  const leaf = sheet.querySelector('.r-turn'), ghost = leaf.querySelector('.r-cols'), shade = leaf.querySelector('.r-shade');
   const note = () => `<p class="r-note">ⓘ ${esc(tr('ocrNote'))}</p>`;
 
   function applyPrefs() {
@@ -178,16 +180,37 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
   }, { passive: true });
   body.addEventListener('click', (e) => { if (!e.target.closest('button, a') && !String(getSelection()).length) el.classList.toggle('immersive'); });
 
-  // ---------- book mode: chapters set in columns; one column = one page (two per view on wide screens) ----------
-  const chapterStarts = [...new Set([0, ...toc.filter((t) => t.level === 1 && !t.absent).map((t) => t.page)])].sort((a, b) => a - b);
-  if (chapterStarts.length < 2) for (let k = 12; k < pages.length; k += 12) chapterStarts.push(k);
-  const chapterOf = (i) => chapterStarts.reduce((a, s, k) => (s <= i ? k : a), 0);
+  // ---------- book mode: the text is set in columns, one column = one page (two per view on wide screens) ----------
+  // The book is cut into segments: every chapter, and long chapters again at section headings, so that each segment is small
+  // enough to lay out quickly on a phone. A segment always starts on a new page.
+  const SEG_PAGES = 9;                                     // printed pages per segment before a section heading may start a new one
+  const segs = (() => {
+    const chapters = toc.filter((t) => t.level === 1 && !t.absent).map((t) => ({ p: t.page, b: Math.max(0, t.b) }));
+    const must = new Set(chapters.map((c) => `${c.p}:${c.b}`));
+    const heads = [];
+    pages.forEach((pg, p) => pg.blocks.forEach((blk, b) => { if (blk.t === 'h1' || blk.t === 'h2' || must.has(`${p}:${b}`)) heads.push({ p, b }); }));
+    chapters.forEach((c) => { if (!heads.some((h) => h.p === c.p && h.b === c.b)) heads.push(c); });
+    heads.sort((x, y) => x.p - y.p || x.b - y.b);
+    const out = [{ p: 0, b: 0 }];
+    heads.forEach((h, n) => {
+      const last = out[out.length - 1];
+      if (h.p === last.p && h.b === last.b) return;
+      const nextMust = heads.slice(n + 1).find((x) => must.has(`${x.p}:${x.b}`));
+      const room = (nextMust ? nextMust.p : pages.length) - h.p;
+      if (must.has(`${h.p}:${h.b}`) || (h.p - last.p >= SEG_PAGES && room >= 3)) out.push(h);
+    });
+    if (out.length < 2) for (let p = 12; p < pages.length; p += 12) out.push({ p, b: 0 });
+    return out;
+  })();
+  const segOfBlock = (p, b) => segs.reduce((a, s, k) => (s.p < p || (s.p === p && s.b <= b) ? k : a), 0);
+  const segOfPage = (i) => segOfBlock(i, 0);
+  const segOfId = (id) => { const m = /^b-(\d+)-(\d+)$/.exec(id || ''); return m ? segOfBlock(Number(m[1]), Number(m[2])) : null; };
   const chapterHtml = (k, mark) => {
-    const a = chapterStarts[k], b = chapterStarts[k + 1] ?? pages.length;
-    return (k === 0 ? note() : '') + flowHtml(a, b, mark) + (b === pages.length ? '<p class="r-end">❖ ❖ ❖</p>' : '');
+    const a = segs[k], e = segs[k + 1];
+    return (k === 0 ? note() : '') + flowHtml(a.p, e ? e.p : pages.length, mark, a.b, e ? e.b : 0) + (e ? '' : '<p class="r-end">❖ ❖ ❖</p>');
   };
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  let chap = -1, col = 0, ncols = 1, perView = 1, step = 1, padX = 22, flipping = false;
+  let chap = -1, col = 0, ncols = 1, perView = 1, step = 1, padX = 22, chapHtml = '', ghostOk = false, turnAnim = null;
   function metrics(target = cols) {
     const w = sheet.clientWidth, h = sheet.clientHeight;
     perView = w >= 980 ? 2 : 1;
@@ -200,85 +223,178 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
   const colOf = (node) => Math.max(0, Math.floor((node.offsetLeft - padX + 2) / step));
   const countCols = (box) => Math.max(1, Math.round(box.scrollWidth / step));
   function renderChapter(k, mark) {
-    chap = k; cols.innerHTML = chapterHtml(k, mark); metrics(); ncols = countCols(cols);
+    chap = k; chapHtml = chapterHtml(k, mark); cols.innerHTML = chapHtml; ghostOk = false; metrics(); ncols = countCols(cols);
   }
+  const place = (box, c) => { box.style.transform = `translateX(${-c * step}px)`; };
   function setCol(c) {
     col = Math.max(0, Math.min(c - (c % perView), Math.max(0, ncols - 1)));
-    cols.style.transform = `translateX(${-col * step}px)`;
-    let at = chapterStarts[chap];                         // the printed page whose text is at the top of the view
+    place(cols, col);
+    let at = segs[chap].p;                                // the printed page whose text is at the top of the view
     cols.querySelectorAll('.pm').forEach((a) => { if (colOf(a) <= col) at = Number(a.dataset.i); });
     current = at; updatePos(); saveProgress();
   }
   function bookShow(i, { id, mark } = {}) {
-    const k = chapterOf(i);
+    const k = mark ? segOfBlock(mark.page, mark.block) : segOfId(id) ?? segOfPage(i);
     if (k !== chap || mark) renderChapter(k, mark);
     const target = mark ? cols.querySelector('mark') : cols.querySelector(`#${CSS.escape(id || `pm-${i}`)}`);
     setCol(target ? colOf(target) : 0);
   }
+  const atEnd = () => col + perView >= ncols && chap >= segs.length - 1;
+  const atStart = () => col === 0 && chap === 0;
+  // move without animation (also used at the end of a swipe and for reduced motion)
+  function turn(dir) {
+    if (dir > 0) { if (col + perView >= ncols) { renderChapter(chap + 1); setCol(0); } else setCol(col + perView); }
+    else if (col === 0) { renderChapter(chap - 1); setCol(ncols - 1); } else setCol(col - perView);
+  }
+  // Page-turn animation: a copy of the current view (the "leaf", laid out once per segment, not per turn) folds away over the
+  // next view. A new turn finishes the running one at once, so fast taps and held arrow keys are never ignored.
   function flip(dir) {
-    if (flipping) return;
-    const lastView = col + perView >= ncols, firstView = col === 0;
-    if (dir > 0 && lastView && chap >= chapterStarts.length - 1) return;
-    if (dir < 0 && firstView && chap === 0) return;
-    const snap = cols.cloneNode(true), w = sheet.clientWidth, half = perView === 2;
-    snap.querySelectorAll('[id]').forEach((n) => n.removeAttribute('id'));
-    const turn = document.createElement('div');
-    turn.className = `r-turn ${dir > 0 ? 'fwd' : 'back'}`;
-    Object.assign(turn.style, half ? { left: dir > 0 ? `${w / 2}px` : '0px', width: `${w / 2}px` } : { left: '0px', width: `${w}px` });
-    snap.style.transform = `translateX(${-col * step - (half && dir > 0 ? w / 2 : 0)}px)`;
-    turn.appendChild(snap); turn.insertAdjacentHTML('beforeend', '<i class="r-shade"></i>');
-    if (dir > 0) { if (lastView) { renderChapter(chap + 1); setCol(0); } else setCol(col + perView); }
-    else if (firstView) { renderChapter(chap - 1); setCol(ncols - 1); } else setCol(col - perView);
-    if (reduceMotion) return;
-    flipping = true; sheet.appendChild(turn);
-    const anim = turn.animate([{ transform: 'rotateY(0deg)' }, { transform: `rotateY(${dir > 0 ? -180 : 180}deg)` }], { duration: 620, easing: 'cubic-bezier(.45,.05,.35,1)' });
-    turn.querySelector('.r-shade').animate([{ opacity: 0 }, { opacity: 0.55 }], { duration: 620, easing: 'ease-in' });
-    anim.onfinish = anim.oncancel = () => { turn.remove(); flipping = false; };
+    if (turnAnim) turnAnim.finish();
+    if ((dir > 0 && atEnd()) || (dir < 0 && atStart())) return;
+    if (reduceMotion) { turn(dir); return; }
+    const w = sheet.clientWidth, half = perView === 2;
+    if (!ghostOk) { ghost.innerHTML = chapHtml.replace(/ id="[^"]*"/g, ''); metrics(ghost); ghostOk = true; }
+    leaf.className = `r-turn ${dir > 0 ? 'fwd' : 'back'}`;
+    Object.assign(leaf.style, half ? { left: dir > 0 ? `${w / 2}px` : '0px', width: `${w / 2}px` } : { left: '0px', width: `${w}px` });
+    ghost.style.transform = `translateX(${-col * step - (half && dir > 0 ? w / 2 : 0)}px)`;
+    leaf.hidden = false;
+    turn(dir);
+    const opts = { duration: 430, easing: 'cubic-bezier(.3,.1,.3,1)' };
+    turnAnim = leaf.animate([{ transform: 'perspective(2200px) rotateY(0deg)' }, { transform: `perspective(2200px) rotateY(${dir > 0 ? -180 : 180}deg)` }], opts);
+    const sh = shade.animate([{ opacity: 0 }, { opacity: 0.5 }], opts);
+    const done = () => { if (turnAnim === a) { leaf.hidden = true; turnAnim = null; sh.cancel(); } };
+    const a = turnAnim; a.onfinish = a.oncancel = done;
   }
 
-  // Page numbers for the whole book at the current layout: measure each chapter off-screen, a few per frame.
+  // Page numbers for the whole book at the current layout: each segment is measured off-screen while the reader is idle
+  // (never while a finger is on the page), and the result is remembered for this screen size and these settings.
   const layout = { total: 0, offset: [], tocPage: [] };
-  let measureRun = 0;
+  const textSig = pages.reduce((n, p) => p.blocks.reduce((m, b) => m + b.x.length, n), 0);
+  const layoutKey = `gab-layout-${book.id}`;
+  const idle = window.requestIdleCallback ? (fn) => requestIdleCallback(fn, { timeout: 2000 }) : (fn) => setTimeout(() => fn({ timeRemaining: () => 8 }), 40);
+  let measureRun = 0, lastInput = 0;
+  function applyLayout(counts, tocCol) {
+    layout.offset = counts.reduce((acc, c, i) => { acc.push(i ? acc[i - 1] + counts[i - 1] : 0); return acc; }, []);
+    layout.total = counts.reduce((a, b) => a + b, 0);
+    layout.tocPage = tocCol.map((x) => (x ? layout.offset[x[0]] + x[1] + 1 : 0));
+    el.querySelectorAll('[data-tkp]').forEach((s) => { s.textContent = tocPageText(Number(s.dataset.tkp)); });
+    if (panel === 'toc') renderToc();
+    updatePos();
+  }
   function measure() {
     const run = ++measureRun;
-    const box = document.createElement('div'); box.className = 'r-cols r-text r-measure'; box.setAttribute('aria-hidden', 'true');
-    sheet.appendChild(box); metrics(box);
-    const counts = [], tocCol = [];
-    let k = 0;
-    const work = () => {
-      if (run !== measureRun) { box.remove(); return; }
-      const until = performance.now() + 12;
-      while (k < chapterStarts.length && performance.now() < until) {
-        box.innerHTML = chapterHtml(k);
-        counts[k] = countCols(box);
-        toc.forEach((t, n) => { if (chapterOf(t.page) === k) { const node = box.querySelector(`#${CSS.escape(targetId(t))}`); tocCol[n] = [k, node ? colOf(node) : 0]; } });
-        k++;
-      }
-      if (k < chapterStarts.length) { requestAnimationFrame(work); return; }
-      box.remove();
-      layout.offset = counts.reduce((acc, c, i) => { acc.push(i ? acc[i - 1] + counts[i - 1] : 0); return acc; }, []);
-      layout.total = counts.reduce((a, b) => a + b, 0);
-      layout.tocPage = tocCol.map(([kk, c]) => layout.offset[kk] + c + 1);
-      el.querySelectorAll('[data-tkp]').forEach((s) => { s.textContent = tocPageText(Number(s.dataset.tkp)); });
-      if (panel === 'toc') renderToc();
-      updatePos();
-    };
-    requestAnimationFrame(work);
+    (document.fonts ? document.fonts.ready : Promise.resolve()).then(() => {
+      if (run !== measureRun) return;
+      const sig = [sheet.clientWidth, sheet.clientHeight, prefs.size, prefs.spacing, prefs.font, prefs.width, prefs.justify, segs.length, textSig].join('|');
+      const saved = local.get(layoutKey, null);
+      if (saved && saved.sig === sig) { applyLayout(saved.counts, saved.tocCol); return; }
+      const box = document.createElement('div'); box.className = 'r-cols r-text r-measure'; box.setAttribute('aria-hidden', 'true');
+      sheet.appendChild(box); metrics(box);
+      const counts = [], tocCol = [];
+      let k = 0;
+      const work = (deadline) => {
+        if (run !== measureRun) { box.remove(); return; }
+        if (Date.now() - lastInput < 700) { idle(work); return; }          // the reader is turning pages: wait
+        do {
+          box.innerHTML = chapterHtml(k);
+          counts[k] = countCols(box);
+          toc.forEach((t, n) => {
+            if (t.absent) return;
+            const kk = t.b >= 0 ? segOfBlock(t.page, t.b) : segOfPage(t.page);
+            if (kk === k) { const node = box.querySelector(`#${CSS.escape(targetId(t))}`); tocCol[n] = [k, node ? colOf(node) : 0]; }
+          });
+          k++;
+        } while (k < segs.length && deadline.timeRemaining() > 6);
+        if (k < segs.length) { idle(work); return; }
+        box.remove();
+        try { local.set(layoutKey, { sig, counts, tocCol }); } catch { /* storage full: measure again next time */ }
+        applyLayout(counts, tocCol);
+      };
+      idle(work);
+    });
   }
   function tocPageText(n) { return prefs.mode === 'book' && layout.total && layout.tocPage[n] ? String(layout.tocPage[n]) : ''; }
 
-  // taps on the edges and swipes turn pages; a tap in the middle shows or hides the bars
-  let down = null;
-  bookEl.addEventListener('pointerdown', (e) => { down = { x: e.clientX, y: e.clientY }; });
-  bookEl.addEventListener('pointerup', (e) => {
-    if (!down || e.target.closest('button, a')) { down = null; return; }
-    const dx = e.clientX - down.x, dy = e.clientY - down.y; const r = bookEl.getBoundingClientRect(); down = null;
-    if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy)) { flip(dx < 0 ? 1 : -1); return; }
-    if (Math.abs(dx) > 10 || Math.abs(dy) > 10 || String(getSelection()).length) return;
-    const x = (e.clientX - r.left) / r.width;
-    if (x > 0.68) flip(1); else if (x < 0.32) flip(-1); else el.classList.toggle('immersive');
+  // ---------- gestures ----------
+  // A finger drag moves the page with the finger; letting go past a fifth of the page (or with a quick flick) turns it,
+  // otherwise it springs back. Drags work anywhere, also on the contents list. Taps on the edges turn pages with the fold
+  // animation, a tap in the middle shows or hides the bars, and a tap on a contents entry opens it.
+  // The page follows the finger through a paused animation whose time is moved, and slides home with a short animation:
+  // both run on the compositor, which keeps a long text strip moving at full frame rate on a phone (setting style.transform
+  // on every move made the browser re-layer the whole strip each frame).
+  let drag = null, suppressClick = false, dragAnim = null, slideAnim = null;
+  const DRAG_T = 1000;
+  function slideFrom(off, ms) {                         // style.transform already holds the destination
+    if (slideAnim) slideAnim.cancel();
+    slideAnim = cols.animate([{ transform: `translateX(${off}px)` }, { transform: cols.style.transform }], { duration: ms, easing: 'cubic-bezier(.2,.75,.25,1)' });
+    const a = slideAnim; a.onfinish = () => { if (slideAnim === a) slideAnim = null; };
+  }
+  bookEl.addEventListener('pointerdown', (e) => {
+    if (!e.isPrimary || e.button > 0) return;
+    lastInput = Date.now();
+    if (turnAnim) turnAnim.finish();
+    if (slideAnim) slideAnim.finish();
+    drag = { x0: e.clientX, y0: e.clientY, dx: 0, active: false, touch: e.pointerType !== 'mouse', pts: [[e.clientX, e.timeStamp]], id: e.pointerId };
   });
-  bookEl.addEventListener('wheel', (e) => { if (Math.abs(e.deltaX) > 30 || Math.abs(e.deltaY) > 40) { e.preventDefault(); flip((e.deltaX || e.deltaY) > 0 ? 1 : -1); } }, { passive: false });
+  bookEl.addEventListener('pointermove', (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    lastInput = Date.now();
+    const dx = e.clientX - drag.x0, dy = e.clientY - drag.y0;
+    if (!drag.active) {
+      if (drag.touch && Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy) * 1.1) {
+        drag.active = true; el.classList.add('dragging');
+        drag.R = step * 1.25; drag.base = -col * step;
+        dragAnim = cols.animate([{ transform: `translateX(${drag.base - drag.R}px)` }, { transform: `translateX(${drag.base + drag.R}px)` }], { duration: DRAG_T, fill: 'both' });
+        dragAnim.pause();
+        try { bookEl.setPointerCapture(e.pointerId); } catch { /* pointer already gone */ }
+        getSelection().removeAllRanges();
+      } else return;
+    }
+    drag.dx = dx;
+    drag.pts.push([e.clientX, e.timeStamp]); if (drag.pts.length > 6) drag.pts.shift();
+    const edge = (dx < 0 && col + perView >= ncols) || (dx > 0 && col === 0);   // the next page is in another segment
+    drag.edge = edge;
+    drag.off = edge ? dx * 0.3 : dx;
+    dragAnim.currentTime = Math.max(0, Math.min(DRAG_T, ((drag.off + drag.R) / (2 * drag.R)) * DRAG_T));
+  });
+  const endDrag = (e, cancelled) => {
+    const d = drag; drag = null;
+    if (!d || !d.active) return d;
+    el.classList.remove('dragging'); suppressClick = true; setTimeout(() => { suppressClick = false; }, 0);
+    const off = d.base + (d.off || 0);
+    if (dragAnim) { dragAnim.cancel(); dragAnim = null; }
+    const [x1, t1] = d.pts[0], [x2, t2] = d.pts[d.pts.length - 1];
+    const v = (x2 - x1) / Math.max(1, t2 - t1);                         // px per ms over the last few moves
+    const dir = d.dx < 0 ? 1 : -1;
+    const go = !cancelled && (Math.abs(d.dx) > step * 0.2 || (Math.abs(v) > 0.35 && Math.sign(v) === Math.sign(d.dx)));
+    if (!go || (dir > 0 && atEnd()) || (dir < 0 && atStart())) { slideFrom(off, 220); return null; }
+    if (d.edge) { flip(dir); return null; }                               // next segment: render it and fold over
+    const left = step - Math.abs(d.off || 0);
+    setCol(col + dir * perView);
+    slideFrom(off, Math.round(Math.max(140, Math.min(320, left / Math.max(0.6, Math.abs(v))))));
+    return null;
+  };
+  bookEl.addEventListener('pointerup', (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    lastInput = Date.now();
+    const d = endDrag(e, false);
+    if (!d) return;                                                      // it was a drag
+    if (e.target.closest('button, a') || String(getSelection()).length) return;
+    if (Math.abs(e.clientX - d.x0) > 10 || Math.abs(e.clientY - d.y0) > 10) return;
+    const r = bookEl.getBoundingClientRect(), x = (e.clientX - r.left) / r.width;
+    if (x > 0.7) flip(1); else if (x < 0.3) flip(-1); else el.classList.toggle('immersive');
+  });
+  bookEl.addEventListener('pointercancel', (e) => { if (drag && e.pointerId === drag.id) endDrag(e, true); });
+  bookEl.addEventListener('click', (e) => { if (suppressClick) { e.stopPropagation(); e.preventDefault(); } }, true);
+  // one page per wheel or trackpad gesture (a gesture ends after a short pause), not one per wheel event
+  let wheelBusy = false, wheelT;
+  bookEl.addEventListener('wheel', (e) => {
+    e.preventDefault(); lastInput = Date.now();
+    clearTimeout(wheelT); wheelT = setTimeout(() => { wheelBusy = false; }, 180);
+    if (wheelBusy) return;
+    const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+    if (Math.abs(d) > 12) { wheelBusy = true; flip(d > 0 ? 1 : -1); }
+  }, { passive: false });
   let resizeT;
   const onResize = () => { clearTimeout(resizeT); resizeT = setTimeout(() => relayout(current), 150); };
   window.addEventListener('resize', onResize);
@@ -451,6 +567,7 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
     }
   });
   function relayout(keep = current) {
+    if (turnAnim) turnAnim.finish();
     layout.total = 0; chap = -1;
     requestAnimationFrame(() => {
       if (prefs.mode === 'book') { article.innerHTML = ''; anchors = []; bookShow(keep); measure(); }
@@ -462,8 +579,8 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
     if (e.target.closest('input')) { if (e.key === 'Escape') closePanel(); return; }
     if (e.key === 'Escape') { if (fsEl()) return; panel ? closePanel() : (cleanup(), onExit()); }
     else if (e.key === 'f' || e.key === 'F') toggleFullscreen();
-    else if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') prefs.mode === 'book' ? flip(1) : body.scrollBy({ top: body.clientHeight * 0.9 });
-    else if (e.key === 'ArrowLeft' || e.key === 'PageUp') prefs.mode === 'book' ? flip(-1) : body.scrollBy({ top: -body.clientHeight * 0.9 });
+    else if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') { e.preventDefault(); lastInput = Date.now(); prefs.mode === 'book' ? flip(1) : body.scrollBy({ top: body.clientHeight * 0.9 }); }
+    else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); lastInput = Date.now(); prefs.mode === 'book' ? flip(-1) : body.scrollBy({ top: -body.clientHeight * 0.9 }); }
   };
   document.addEventListener('keydown', onKey);
   function cleanup() {
