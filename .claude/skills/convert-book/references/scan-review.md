@@ -4,7 +4,7 @@ Book: <TITLE — fill in before handing this to reviewers>. For each page index 
 - `img/NNN.png`: the scanned printed page (about 1140x1700 px). Read it at full resolution by cutting it into 3-4 horizontal
   strips with Python/Pillow (save strips under `_strips/`) and viewing each strip with the Read tool.
 - `txt/NNN.txt`: what our OCR pipeline produced: a header line with the page `key`, then numbered blocks
-  `[k] type: text`. Types: h1 chapter heading, h2 section heading, p paragraph, c centred line, toc generated contents list.
+  `[k] type: text`. Types: h1 chapter heading, h2 section heading, p paragraph, c centred line, fn footnote, toc generated contents list.
   "(continues from previous page)" means the block is joined to the last paragraph of the previous page.
 
 Compare them and record corrections so the text reads like the printed page.

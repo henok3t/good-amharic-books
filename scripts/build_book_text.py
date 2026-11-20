@@ -18,6 +18,9 @@ from collections import Counter
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ETH_NUM = '፩፪፫፬፭፮፯፰፱፲፳፴፵፶፷፸፹፺፻፼'
+NUM_WORDS = ('አንድ', 'ሁለት', 'ሦስት', 'ሶስት', 'አራት', 'አምስት', 'ስድስት', 'ሰባት', 'ስምንት', 'ዘጠኝ', 'አሥር', 'አስር',
+             'አሥራ', 'አስራ', 'ሃያ', 'ሀያ', 'አንደኛ', 'ሁለተኛ', 'ሦስተኛ', 'ሶስተኛ', 'አራተኛ', 'አምስተኛ', 'ስድስተኛ', 'ሰባተኛ', 'ስምንተኛ', 'ዘጠነኛ', 'አሥረኛ', 'አስረኛ')
+CHAPTER_RE = re.compile(r'^(ምዕራፍ|ክፍል)\s*([\d' + ETH_NUM + r']|(' + '|'.join(NUM_WORDS) + r')(\s|$|[\s(]))')
 END_PUNCT = ('።', '?', '!', '፧', '»', '”', '፡፡', '!»', '?»')
 ETH = re.compile(r'^[ሀ-፿]+$')
 LEX = Counter()
@@ -123,6 +126,8 @@ def split_halves(lines, landscape):
     return [[l for l in lines if (l['x0'] + l['x1']) / 2 < gut], [l for l in lines if (l['x0'] + l['x1']) / 2 >= gut]]
 
 HEADERS = set()
+HEADER_TEXT = ''          # set when most pages share one running header (fuzzy, OCR varies)
+FOOTNOTES = False         # set when many pages end with numbered footnotes
 def norm_header(t): return re.sub(r'[\d\s' + ETH_NUM + r'.\-–—]', '', t)
 
 def is_page_number(t):
@@ -130,19 +135,59 @@ def is_page_number(t):
     return bool(re.fullmatch(r'\d{1,4}', t)) or (0 < len(t) <= 4 and all(ch in ETH_NUM for ch in t))
 
 # ---------- page layout ----------
+def footnote_start(lines):
+    """Index (in y order) of the first footnote line: in the bottom 40%, after a clear gap, starting with a note number."""
+    L = sorted(lines, key=lambda l: l['y0'])
+    if len(L) < 8: return None
+    gaps = [b['y0'] - a['y1'] for a, b in zip(L, L[1:]) if b['y0'] > a['y1']]
+    typical = statistics.median(gaps) if gaps else 0.005
+    for i in range(len(L) // 2, len(L)):
+        l = L[i]
+        if l['y0'] < 0.6: continue
+        gap = l['y0'] - L[i - 1]['y1']
+        if gap > max(typical * 1.8, 0.012) and re.match(r'^\*?\d{1,3}\s+\S', l['x']):
+            return i
+    return None
+
 def layout_page(lines):
     """Lines of one printed page -> (page label, blocks)."""
     if not lines: return None, []
     lines = sorted(lines, key=lambda l: (round(l['y0'], 3), l['x0']))
     label = None
     ys = [l['y0'] for l in lines]; top, bottom = min(ys), max(l['y1'] for l in lines)
+    # books with a running header on most pages (e.g. "<title>  151"): drop the header row, take the number from it
+    if HEADER_TEXT:
+        from rapidfuzz import fuzz
+        def is_head(l):
+            t = norm_header(l['x']); r = fuzz.ratio(t, HEADER_TEXT)
+            return l['y0'] < 0.12 and (r >= 60 or (r >= 45 and l['y0'] < 0.08 and len(t) <= len(HEADER_TEXT) * 1.5))
+        head = next((l for l in lines[:4] if is_head(l)), None)
+        if head:
+            row = [l for l in lines if abs(l['y0'] - head['y0']) < max(head['h'], 0.01) * 0.8]
+            for l in row:
+                m = re.search(r'\b(\d{1,4})\b', l['x'].replace('°', ' '))
+                if m and not label: label = m.group(1)
+            lines = [l for l in lines if l not in row]
+            if not lines: return label, []
+            ys = [l['y0'] for l in lines]; top, bottom = min(ys), max(l['y1'] for l in lines)
     body = []
     for l in lines:
         near_edge = l['y0'] - top < 0.04 or bottom - l['y1'] < 0.04
-        if is_page_number(l['x']) and near_edge: label = l['x'].strip(' -–—.'); continue
+        if is_page_number(l['x']) and near_edge and not HEADER_TEXT: label = l['x'].strip(' -–—.'); continue
         if len(l['x'].strip(' .,-·\'"')) <= 1 and not l['x'].strip().isdigit(): continue      # specks
         body.append(l)
     if not body: return label, []
+    notes = []
+    if FOOTNOTES:
+        fs = footnote_start(body)
+        if fs is not None:
+            body = sorted(body, key=lambda l: l['y0'])
+            for l in body[fs:]:
+                t = norm_punct(l['x'])
+                if re.match(r'^\*?\d{1,3}\s+\S', t) or not notes: notes.append(t)
+                else: notes[-1] = glue(notes[-1], t)
+            body = body[:fs]
+            if not body: return label, [{'t': 'fn', 'x': n} for n in notes]
     # running header: the same short top line repeated on several pages (found in main(), passed in HEADERS)
     if len(body) > 3 and norm_header(body[0]['x']) in HEADERS:
         body = body[1:]
@@ -168,7 +213,7 @@ def layout_page(lines):
         tall = l['h'] > H * 1.28
         prev_ended = prev is None or prev['end']
         heading = (centered or tall) and len(text) < 75 and not text.endswith(('።', '፣', '፤', '፥')) and prev_ended
-        if re.match(r'^ምዕራፍ\s*[\d' + ETH_NUM + r']', text) and len(text) < 70:
+        if CHAPTER_RE.match(text) and len(text) < 70 and (text.startswith('ምዕራፍ') or prev_ended):
             flush(); blocks.append({'t': 'h1', 'x': text}); prev = {'end': True, 'head': True}; continue
         if heading:
             flush()
@@ -194,7 +239,7 @@ def layout_page(lines):
         prev = {'end': short and punct, 'short': short, 'punct': punct, 'head': False, 'indent': indent}
     flush()
     for b in blocks: b['x'] = norm_quotes(b['x'])
-    return label, blocks
+    return label, blocks + [{'t': 'fn', 'x': n} for n in notes]
 
 # ---------- page labels and contents ----------
 def fix_labels(pages):
@@ -298,6 +343,11 @@ def fold(t):
     for a, b in (('ሐ', 'ሀ'), ('ኀ', 'ሀ'), ('ሠ', 'ሰ'), ('ዐ', 'አ'), ('ፀ', 'ጸ')): t = t.replace(a, b)
     return t
 
+def num_word(n):
+    words = ['', 'አንድ', 'ሁለት', 'ሦስት', 'አራት', 'አምስት', 'ስድስት', 'ሰባት', 'ስምንት', 'ዘጠኝ', 'አሥር', 'አሥራ አንድ', 'አሥራ ሁለት',
+             'አሥራ ሦስት', 'አሥራ አራት', 'አሥራ አምስት', 'አሥራ ስድስት', 'አሥራ ሰባት', 'አሥራ ስምንት', 'አሥራ ዘጠኝ', 'ሃያ']
+    return words[int(n)] if n and n.isdigit() and int(n) < len(words) else ''
+
 def eth_num(n):
     if not n or not n.isdigit(): return ''
     n = int(n); ones = ' ፩፪፫፬፭፮፯፰፱'; tens = ' ፲፳፴፵፶፷፸፹፺'
@@ -330,7 +380,7 @@ def use_clean_contents(pages, toc, book_id, first_body):
                 if chapter_heads and not (b['t'] == 'h1' and b['x'].startswith('ምዕራፍ')): continue   # chapters: real chapter headings only
                 head = fold(b['x'][:len(e['title']) + 30])
                 if e['level'] == 1 and b['t'] == 'h1':           # chapters come in order: any chapter heading nearby, number preferred
-                    nums = {e.get('num', '-'), eth_num(e.get('num', ''))}
+                    nums = {e.get('num', '-'), eth_num(e.get('num', '')), num_word(e.get('num', ''))}
                     score = 100 if any(re.search(r'ምዕራፍ\s*' + re.escape(n) + r'(?![\d፩-፼])', b['x']) for n in nums if n) else max(88, fuzz.partial_ratio(want, head))
                 else: score = fuzz.partial_ratio(want, head) if len(want) >= 3 else (100 if head.startswith(want) else 0)
                 raw = score
@@ -339,7 +389,7 @@ def use_clean_contents(pages, toc, book_id, first_body):
                 if score > best[0]: best = (score, i, k, b)
                 if b['t'] == 'h2' and raw >= 60 and abs(i - guess) <= 2 and raw > loose[0]: loose = (raw, i, k, b)
         score, i, k, b = best
-        if (b is None or score < 78) and loose[3] is not None and e['level'] == 2:
+        if (b is None or score < 78) and loose[3] is not None and e['level'] >= 2:
             # the body words the section heading differently: link to it, keep the printed wording
             _, i, k, b = loose
             out.append({'title': title, 'level': 2, 'page': i, '_blk': b}); last = i
@@ -407,6 +457,14 @@ def main(book_id, ocr_dir):
         for l in half:
             for w in l['x'].split()[1:-1]:
                 if ETH.match(w): LEX[w] += 1
+    global HEADER_TEXT, FOOTNOTES
+    from rapidfuzz import fuzz
+    firsts = [norm_header(sorted(h, key=lambda l: l['y0'])[0]['x']) for h, _ in raw if len(h) > 3]
+    common = Counter(firsts).most_common(1)
+    if common and len(common[0][0]) >= 3 and sum(1 for t in firsts if fuzz.ratio(t, common[0][0]) >= 60) >= 0.3 * len(firsts):
+        HEADER_TEXT = common[0][0]
+    n_notes = sum(1 for h, _ in raw if footnote_start(h) is not None)
+    FOOTNOTES = n_notes >= 8 and n_notes >= 0.05 * max(1, len(raw))
     tops = Counter(norm_header(sorted(h, key=lambda l: l['y0'])[0]['x']) for h, _ in raw if len(h) > 3)
     HEADERS.update(t for t, n in tops.items() if n >= 3 and t and len(t) < 45 and not t.startswith('ምዕራፍ'))
     pages = []
@@ -483,10 +541,12 @@ def main(book_id, ocr_dir):
             bl.insert(0, {'t': 'h1', 'x': t['title']})
     for t in toc: t.pop('_used', None)
     toc.sort(key=lambda t: (t['page'], t['level']))
-    for a, b in zip(pages, pages[1:]):                   # paragraph continuing onto the next page
-        if a['blocks'] and b['blocks'] and a['blocks'][-1]['t'] == 'p' and b['blocks'][0]['t'] == 'p' \
-                and (not a['blocks'][-1]['x'].endswith(END_PUNCT) or b['blocks'][0].get('forcecont')) and not b['blocks'][0].get('nocont'):
-            b['blocks'][0]['cont'] = True
+    for a, b in zip(pages, pages[1:]):                   # paragraph continuing onto the next page (footnotes in between are skipped)
+        last = next((x for x in reversed(a['blocks']) if x['t'] != 'fn'), None)
+        first = b['blocks'][0] if b['blocks'] else None
+        if last and first and last['t'] == 'p' and first['t'] == 'p' \
+                and (not last['x'].endswith(END_PUNCT) or first.get('forcecont')) and not first.get('nocont'):
+            first['cont'] = True
     for p in pages:
         for b in p['blocks']: b.pop('nocont', None); b.pop('forcecont', None)
     for p in pages: p.pop('_lines', None)

@@ -18,7 +18,7 @@ Ground rules (why they matter):
 - **The repo is public.** Commit code only. `data/` (catalog, text, corrections, PDFs) is git-ignored on purpose; never paste
   book text into code, commits or issues, and never write anyone's email address into files (access rules use Firebase UIDs).
 - **Faithful edition.** Fix what OCR or the printer broke; keep the author's spelling, style and grammar.
-- **Costs are real.** Cloud Vision is about $1.50 per 1,000 PDF pages (first 1,000/month free). The two review passes are the
+- **Costs are real.** Cloud Vision is about 1.50 US dollars per 1,000 PDF pages (first 1,000/month free). The two review passes are the
   expensive part in model usage (roughly 2 M tokens for a 170-page book). Tell the user the expected cost for big batches first.
 
 ## 0. Prerequisites

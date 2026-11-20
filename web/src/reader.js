@@ -57,7 +57,8 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
   // ---------- flowing text ----------
   function markText(raw, m) { return m ? esc(raw.slice(0, m.at)) + `<mark>${esc(raw.slice(m.at, m.at + m.len))}</mark>` + esc(raw.slice(m.at + m.len)) : esc(raw); }
   function flowHtml(a, b, mark) {
-    let html = '', openP = false;
+    let html = '', openP = false, notes = '';         // footnotes wait until the paragraph they interrupt has ended
+    const closeP = () => { if (openP) { html += '</p>'; openP = false; } if (notes) { html += `<aside class="r-fn">${notes}</aside>`; notes = ''; } };
     for (let i = a; i < b; i++) {
       const anchor = `<span class="pm" id="pm-${i}" data-i="${i}"></span>`;
       const bl = pages[i].blocks;
@@ -65,8 +66,9 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
       bl.forEach((blk, k) => {
         const id = `b-${i}-${k}`, m = k === 0 ? anchor : '';
         const x = markText(blk.x, mark && mark.page === i && mark.block === k ? mark : null);
+        if (blk.t === 'fn') { const n = `<p id="${id}">${m}${x}</p>`; if (openP) notes += n; else html += `<aside class="r-fn">${n}</aside>`; return; }
         if (blk.t === 'p' && blk.cont && k === 0 && openP) { html += ` ${m}<span id="${id}">${x}</span>`; return; }  // paragraph runs on across the printed page break
-        if (openP) { html += '</p>'; openP = false; }
+        closeP();
         if (blk.t === 'h1') html += `<h2 class="r-h1" id="${id}">${m}${x}</h2>`;
         else if (blk.t === 'h2') html += `<h3 class="r-h2" id="${id}">${m}${x}</h3>`;
         else if (blk.t === 'pre') html += `<pre class="r-pre" id="${id}">${m}${x}</pre>`;
@@ -76,7 +78,7 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
         else { html += `<p id="${id}"${LIST_ITEM.test(blk.x) ? ' class="li"' : ''}>${m}${x}`; openP = true; }
       });
     }
-    if (openP) html += '</p>';
+    closeP();
     return html;
   }
 

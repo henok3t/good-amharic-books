@@ -40,6 +40,12 @@ body { margin: 0; }
 .contents ol { list-style: none; padding: 0; margin: 0; font-size: 10pt; }
 .contents li { margin: 0 0 1.6mm; }
 .contents li.l2 { padding-left: 7mm; font-size: 9.3pt; color: #333; }
+.contents li.l3 { padding-left: 13mm; font-size: 8.8pt; color: #444; }
+.contents li.l4 { padding-left: 19mm; font-size: 8.4pt; color: #555; }
+.contents li.l5, .contents li.l6 { padding-left: 24mm; font-size: 8.2pt; color: #555; }
+.fn { margin: 1.5mm 0 3mm 4mm; padding-left: 3mm; border-left: 0.4pt solid #c9b98f; }
+.fn p { font-size: 7.8pt; line-height: 1.45; text-indent: 0; text-align: left; margin: 0 0 1mm; color: #444; }
+h4 { font-size: 11pt; margin: 4mm 0 1.5mm; color: #173a2c; bookmark-level: 3; break-after: avoid; line-height: 1.4; }
 .contents a { color: inherit; text-decoration: none; }
 .contents a::after { content: leader('.') target-counter(attr(href), page); }
 h2.chapter { break-before: page; string-set: chapter attr(data-title); bookmark-level: 1; padding-top: 6mm; }
@@ -76,7 +82,7 @@ def build_html(book, text, cover):
         f'<li class="l{t["level"]}"><a href="#{anchors[(t["page"], t["title"])]}">{esc(t["title"])}</a></li>' for t in toc
         if t['page'] >= first_body) + '</ol></section>')
     out.append('<main>')
-    open_p = False
+    open_p, notes = False, []
     for i in range(first_body, len(pages)):
         p = pages[i]
         mark = ''                                            # no printed page numbers: this edition paginates itself
@@ -84,11 +90,14 @@ def build_html(book, text, cover):
         mark += ''.join(f'<a id="{a}"></a>' for key, a in anchors.items() if key[0] == i and not any(b['x'] == key[1] for b in p['blocks']))
         for k, b in enumerate(p['blocks']):
             if b['t'] == 'toc': continue
+            if b['t'] == 'fn':                                # footnotes follow the paragraph they interrupt
+                (notes.append(esc(b['x'])) if open_p else out.append(f'<div class="fn"><p>{esc(b["x"])}</p></div>')); continue
             x = esc(b['x'])
             m = mark if k == 0 else ''
             if b['t'] == 'p' and b.get('cont') and k == 0 and open_p:
                 out.append(f' {m}{x}'); continue               # paragraph continues across the page turn
             if open_p: out.append('</p>'); open_p = False
+            if notes: out.append('<div class="fn">' + ''.join(f'<p>{n}</p>' for n in notes) + '</div>'); notes = []
             ids = [anchors[key] for key in anchors if key[0] == i and key[1] == b['x']]
             idattr = f' id="{ids[0]}"' if ids else ''
             if b['t'] == 'h1': out.append(f'<h2 class="chapter" data-title="{x}"{idattr}>{m}{x}</h2>')
@@ -98,6 +107,7 @@ def build_html(book, text, cover):
                 li = re.match(r'^([—–•-]\s|([ሀ-ፐ]|\d{1,2}(ኛ)?)[./)]\s?)', b['x'])
                 out.append(f'<p{idattr}{" class=\"li\"" if li else ""}>{m}{x}'); open_p = True
     if open_p: out.append('</p>')
+    if notes: out.append('<div class="fn">' + ''.join(f'<p>{n}</p>' for n in notes) + '</div>')
     out.append('<p class="end">❖ ❖ ❖</p></main></body></html>')
     return ''.join(out)
 
