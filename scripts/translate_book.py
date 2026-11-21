@@ -152,7 +152,7 @@ def checks(units, eng, prev=None):
     for u in units:
         e = eng.get(u['id'])
         if e is None: flags.append(f'[{u["id"]}] MISSING: no English for this unit'); continue
-        if u['t'] == 'p' and re.fullmatch(r'\(.*\)', u['x'].strip(), re.S) and len(re.findall(r'[A-Za-z]', u['x'])) > 20 and e == '':
+        if u['t'] in ('p', 'fn') and re.fullmatch(r'\(.*\)', u['x'].strip(), re.S) and len(re.findall(r'[A-Za-z]', u['x'])) > 20 and e == '':
             continue                                    # English original of the quotation above, used in its translation
         if not e.strip(): flags.append(f'[{u["id"]}] EMPTY English'); continue
         if ETH.search(e): flags.append(f'[{u["id"]}] ETHIOPIC SCRIPT in English (only Geez quotations may stay): {"".join(ETH.findall(e))[:30]}')
