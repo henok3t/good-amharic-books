@@ -63,7 +63,7 @@ function coverBlock(b) {
 }
 
 function card(b) {
-  return `<a class="card" href="#/book/${b.id}">${coverBlock(b)}${b.hasText ? `<span class="badge-text">${t('readable')}</span>` : ''}<div class="meta">${titleBlock(b)}
+  return `<a class="card" href="#/book/${b.id}">${coverBlock(b)}${b.hasText ? `<span class="badge-text">${t('readable')}</span>` : ''}${b.hasEn ? `<span class="badge-en">${t('enBadge')}</span>` : ''}<div class="meta">${titleBlock(b)}
     <div class="author">${esc(b.author || t('unknownAuthor'))}</div>
     <div class="chips"><span>${esc(groupName(b.group, lang()))}</span>${b.langs.slice(0, 2).map((l) => `<span class="lang">${esc(langName(l, lang()))}</span>`).join('')}</div></div></a>`;
 }
@@ -165,8 +165,9 @@ function bookView(id) {
 function readCta(b) {
   const pr = local.get(`gab-progress-${b.id}`, null);
   return `<div class="read-cta"><a class="btn primary big" href="#/read/${b.id}">📖 ${pr ? t('continueAt', { p: pr.label, pct: pr.pct }) : t('readNow')}</a>
-    <span class="read-note">${t('readNote')}</span>${pr ? `<div class="progress"><i style="width:${pr.pct}%"></i></div>` : ''}
-    ${b.pdfText || b.pdfScan ? `<div class="pdf-row">${b.pdfText ? `<button class="btn" data-pdf="text" data-id="${b.id}">⤓ ${t('pdfText')}</button>` : ''}${b.pdfScan ? `<button class="btn" data-pdf="scan" data-id="${b.id}">⤓ ${t('pdfScan')}</button>` : ''}</div>
+    ${b.hasEn ? `<a class="btn big" href="#/read/${b.id}/en">🇬🇧 ${t('readEn')}</a>` : ''}
+    <span class="read-note">${t('readNote')}${b.hasEn ? ' ' + t('enNote') : ''}</span>${pr ? `<div class="progress"><i style="width:${pr.pct}%"></i></div>` : ''}
+    ${b.pdfText || b.pdfScan ? `<div class="pdf-row">${b.pdfText ? `<button class="btn" data-pdf="text" data-id="${b.id}">⤓ ${t('pdfText')}</button>` : ''}${b.pdfTextEn ? `<button class="btn" data-pdf="text-en" data-id="${b.id}">⤓ ${t('pdfTextEn')}</button>` : ''}${b.pdfScan ? `<button class="btn" data-pdf="scan" data-id="${b.id}">⤓ ${t('pdfScan')}</button>` : ''}</div>
       <span class="read-note">${t('pdfNote2')}</span>` : ''}</div>`;
 }
 
@@ -192,7 +193,7 @@ async function readingView() {
 }
 
 let readerHandle;
-async function readerView(id) {
+async function readerView(id, startLang) {
   const b = state.byId.get(Number(id));
   if (!b || !b.hasText) return go(`#/book/${id}`, true), render();
   app.innerHTML = `<div class="boot"><div class="spinner"></div></div>`;
@@ -202,10 +203,22 @@ async function readerView(id) {
   catch (e) { if (!text) { app.innerHTML = `<div class="boot"><p>${esc(t('textUnavailable'))}</p><a class="btn" href="#/book/${b.id}">${t('back')}</a></div>`; return; } }
   if (route().parts[0] !== 'read' || route().parts[1] !== String(b.id)) return;
   let saved = wasOffline;
+  // the English translation is loaded only when the reader switches to it (and kept offline with the Amharic)
+  let textEn = null;
+  const loadEn = b.hasEn ? async () => {
+    if (textEn) return textEn;
+    const kept = await idbGet(`text-en:${b.id}`);
+    try { if (!kept || navigator.onLine) { textEn = await loadText(b.id, 'en'); if (kept) idbSet(`text-en:${b.id}`, textEn); return textEn; } }
+    catch (e) { if (!kept) throw e; }
+    return (textEn = kept);
+  } : null;
   readerHandle = openReader(app, {
-    book: b, text, lang: lang(), scanUrl,
+    book: b, text, lang: lang(), scanUrl, loadEn, startLang: startLang === 'en' ? 'en' : null,
     pdf: b.pdfText ? () => pdfUrl(b.id, 'text') : null,
-    offline: { has: () => saved, save: async () => { await idbSet(`text:${b.id}`, text); saved = true; }, remove: async () => { await idbDel(`text:${b.id}`); saved = false; } },
+    pdfEn: b.pdfTextEn ? () => pdfUrl(b.id, 'text-en') : null,
+    offline: { has: () => saved,
+      save: async () => { await idbSet(`text:${b.id}`, text); if (loadEn) await idbSet(`text-en:${b.id}`, await loadEn()); saved = true; },
+      remove: async () => { await idbDel(`text:${b.id}`); await idbDel(`text-en:${b.id}`); saved = false; } },
     onExit: () => { readerHandle = null; history.length > 1 ? history.back() : go(`#/book/${b.id}`); },
   });
 }
@@ -218,7 +231,7 @@ async function downloadPdf(btn) {
     const a = document.createElement('a'); a.href = url;
     // ASCII file name: some browsers drop non-Latin download names
     const base = (bk.titleEn || `Book ${bk.id}`).replace(/[^\w .,'()-]+/g, '').trim() || `Book ${bk.id}`;
-    a.download = `${base}${kind === 'scan' ? ' (original scans)' : ''}.pdf`; a.click();
+    a.download = `${base}${kind === 'scan' ? ' (original scans)' : kind === 'text-en' ? ' (English)' : ''}.pdf`; a.click();
   } catch { alert(t('notCopied')); }
   finally { btn.disabled = false; btn.textContent = label; }
 }
@@ -250,7 +263,7 @@ function render() {
   const { parts, params } = route();
   document.title = `${t('siteName')}`;
   if (parts[0] !== 'read' && readerHandle) { readerHandle.cleanup(); readerHandle = null; }
-  if (parts[0] === 'read') return readerView(parts[1]);
+  if (parts[0] === 'read') return readerView(parts[1], parts[2]);
   if (parts[0] === 'reading') readingView();
   else if (parts[0] === 'library') libraryView(params);
   else if (parts[0] === 'book') bookView(parts[1]);

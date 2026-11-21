@@ -46,9 +46,10 @@ export function pdfUrl(id, kind) {
   if (__DEV__) return fetch(`/dev/pdf/${id}-${kind}.pdf`).then((r) => r.blob()).then((b) => URL.createObjectURL(b));
   return storageUrl(`pdf/${id}-${kind}.pdf`);
 }
-export async function loadText(id) {
-  if (__DEV__) return (await fetch(`/dev/text/${id}.json`)).json();
-  const bytes = await getBytes(ref(storage, `text/${id}.json`));
+export async function loadText(id, lang = 'am') {
+  const name = `${id}${lang === 'en' ? '.en' : ''}.json`;
+  if (__DEV__) { const r = await fetch(`/dev/text/${name}`); if (!r.ok) throw new Error(r.status); return r.json(); }
+  const bytes = await getBytes(ref(storage, `text/${name}`));
   return JSON.parse(new TextDecoder().decode(bytes));
 }
 export function storageUrl(path) {

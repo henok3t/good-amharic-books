@@ -58,6 +58,8 @@ for b in raw["books"]:
         **({"hasText": True} if os.path.exists(os.path.join(ROOT, f"data/text/{b['id']}.json")) else {}),
         **({"pdfText": True} if os.path.exists(os.path.join(ROOT, f"data/pdf/{b['id']}-text.pdf")) else {}),
         **({"pdfScan": True} if os.path.exists(os.path.join(ROOT, f"data/pdf/{b['id']}-scan.pdf")) else {}),
+        **({"hasEn": True} if os.path.exists(os.path.join(ROOT, f"data/text/{b['id']}.en.json")) else {}),
+        **({"pdfTextEn": True} if os.path.exists(os.path.join(ROOT, f"data/pdf/{b['id']}-text-en.pdf")) else {}),
     })
 
 cats = {}

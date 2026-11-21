@@ -11,6 +11,12 @@ const FONTS = {
   sans: ["'Noto Sans Ethiopic'", 'Sans', 'ሳንስ'],
   abyssinica: ["'Abyssinica SIL'", 'Abyssinica', 'አቢሲኒካ'],
 };
+// English text uses Latin fonts the phone already has (Charter/Georgia on Apple devices, Noto Serif on Android)
+const FONTS_EN = {
+  serif: ["Charter, 'Iowan Old Style', 'Palatino Linotype', Georgia, 'Noto Serif', serif"],
+  sans: ["system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', sans-serif"],
+  abyssinica: ["Georgia, 'Noto Serif', serif"],
+};
 const THEMES = ['light', 'sepia', 'dark'];
 const DEFAULTS = { size: 2, spacing: 1, font: 'serif', theme: 'sepia', width: 'normal', justify: false, mode: 'book' };
 
@@ -26,7 +32,9 @@ const L = {
     ocrNote: 'Converted from a scanned book and proofread. To compare any passage with the printed book, tap 📄 above.',
     pdf: 'Download as PDF (text edition)', fullSpread: 'Show both pages', mode: 'Layout', book: 'Book (turn pages)', scroll: 'Scroll',
     tapHint: 'Tap the edges or swipe to turn the page', openImage: 'Open image', close: 'Close', printed: 'printed page',
-    absent: 'not in the scanned copy', fullscreen: 'Full screen', fsIos: 'iPhone and iPad don\u2019t allow full screen for web pages. For full-screen reading, add this site to your home screen: tap Share, then “Add to Home Screen”, and open it from there.' },
+    absent: 'not in the scanned copy', fullscreen: 'Full screen', textLang: 'Text', am: 'አማርኛ', en: 'English', both: 'Both',
+    loadingEn: 'Loading the English translation…', enFailed: 'The English translation could not be loaded.', pdfEn: 'Download as PDF (English)',
+    alsoAmharic: 'Amharic matches', switchLang: 'Language of the text', fsIos: 'iPhone and iPad don\u2019t allow full screen for web pages. For full-screen reading, add this site to your home screen: tap Share, then “Add to Home Screen”, and open it from there.' },
   am: { contents: 'ማውጫ', bookmarks: 'ምልክቶች', search: 'በዚህ መጽሐፍ ውስጥ ፈልግ', settings: 'የንባብ ቅንብሮች', page: 'ገጽ',
     original: 'ዋናው ገጽ', noBookmarks: 'እስካሁን ምልክት የለም። ያሉበትን ቦታ ለማስቀመጥ ☆ን ይንኩ።', results: '{n} ውጤቶች',
     noResults: 'ምንም አልተገኘም።', size: 'የፊደል መጠን', spacing: 'የመስመር ክፍተት', font: 'ፊደል', theme: 'ገጽታ', width: 'ስፋት', justify: 'ጽሑፉን አስተካክል',
@@ -35,14 +43,23 @@ const L = {
     ocrNote: 'ከተቃኘ መጽሐፍ ተቀይሮ የተገመገመ ነው። ማንኛውንም ክፍል ከታተመው መጽሐፍ ጋር ለማነጻጸር ከላይ 📄ን ይንኩ።',
     pdf: 'እንደ PDF አውርድ (የጽሑፍ እትም)', fullSpread: 'ሁለቱንም ገጾች አሳይ', mode: 'አቀማመጥ', book: 'መጽሐፍ (ገጽ መግለጥ)', scroll: 'ማሸብለል',
     tapHint: 'ገጽ ለመግለጥ ጠርዙን ይንኩ ወይም ያንሸራትቱ', openImage: 'ምስሉን ክፈት', close: 'ዝጋ', printed: 'የታተመ ገጽ',
-    absent: 'በተቃኘው ቅጂ የለም', fullscreen: 'ሙሉ ገጽ', fsIos: 'iPhone እና iPad ለድረ-ገጾች ሙሉ ገጽ አይፈቅዱም። በሙሉ ገጽ ለማንበብ ይህን ገጽ በመነሻ ገጽዎ ላይ ያክሉ፦ Share ን ይንኩ፣ “Add to Home Screen” ን ይምረጡ፣ ከዚያ ይክፈቱት።' },
+    absent: 'በተቃኘው ቅጂ የለም', fullscreen: 'ሙሉ ገጽ', textLang: 'ጽሑፍ', am: 'አማርኛ', en: 'English', both: 'ሁለቱም',
+    loadingEn: 'የእንግሊዝኛው ትርጉም በመጫን ላይ…', enFailed: 'የእንግሊዝኛውን ትርጉም መጫን አልተቻለም።', pdfEn: 'እንደ PDF አውርድ (እንግሊዝኛ)',
+    alsoAmharic: 'በአማርኛ የተገኙ', switchLang: 'የጽሑፉ ቋንቋ', fsIos: 'iPhone እና iPad ለድረ-ገጾች ሙሉ ገጽ አይፈቅዱም። በሙሉ ገጽ ለማንበብ ይህን ገጽ በመነሻ ገጽዎ ላይ ያክሉ፦ Share ን ይንኩ፣ “Add to Home Screen” ን ይምረጡ፣ ከዚያ ይክፈቱት።' },
 };
 
-export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onExit }) {
+export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onExit, loadEn = null, pdfEn = null, startLang = null }) {
   const tr = (k, v = {}) => Object.entries(v).reduce((s, [a, b]) => s.replace(`{${a}}`, b), L[lang === 'am' ? 'am' : 'en'][k]);
   const prefs = { ...DEFAULTS, ...local.get('gab-reader', {}) };
   const progKey = `gab-progress-${book.id}`, bmKey = `gab-bm-${book.id}`;
-  const pages = text.pages;
+  // Text language: 'am' (the converted book), 'en' (the translation) or 'both' (English with the Amharic under each paragraph).
+  // The translation has exactly the same pages and blocks as the Amharic, so positions, bookmarks and segments are shared.
+  const textAm = text;
+  let textEn = null;
+  const langKey = `gab-textlang-${book.id}`;
+  const wantLang = loadEn ? (startLang || local.get(langKey, 'am')) : 'am';
+  let tl = 'am';
+  let pages = textAm.pages;
   let current = Math.min(local.get(progKey, {}).page ?? 0, pages.length - 1);
   let panel = null, searchState = { q: '', results: [] };
 
@@ -51,7 +68,9 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
   const printedLabel = (i) => pages[i].n || roman(i + 1);
   const pct = (i) => Math.round(((i + 1) / pages.length) * 100);
   // contents entries point at their heading block (t.b from the builder, else found by title)
-  const toc = text.toc.map((t) => ({ ...t, b: t.b ?? pages[t.page]?.blocks.findIndex((b) => b.x === t.title) }));
+  const tocOf = (tx) => tx.toc.map((t) => ({ ...t, b: t.b ?? tx.pages[t.page]?.blocks.findIndex((b) => b.x === t.title) }));
+  const tocAm = tocOf(textAm);
+  let toc = tocAm;
   const targetId = (t) => (t.b >= 0 ? `b-${t.page}-${t.b}` : `pm-${t.page}`);
 
   // ---------- flowing text ----------
@@ -59,7 +78,13 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
   const TABLE_ROW = / \| |^\| /;
   function flowHtml(a, b, mark, ab = 0, bb = 0) {        // pages a..b-1; starts at block ab of page a; with bb, also page b's first bb blocks
     let html = '', openP = false, openT = false, notes = '';   // footnotes wait until the paragraph they interrupt has ended
-    const closeP = () => { if (openP) { html += '</p>'; openP = false; } if (openT) { html += '</tbody></table></div>'; openT = false; }
+    // 'both': the Amharic of each paragraph, heading, note and table follows its English, in a quieter style
+    const par = tl === 'both', am = (i, k) => esc(textAm.pages[i].blocks[k]?.x || '');
+    let altP = '', altRows = '';
+    const altEl = (x, cls = '') => (par && x ? `<p class="r-alt${cls}" lang="am">${x}</p>` : '');
+    const closeP = () => {
+      if (openP) { html += '</p>' + altEl(altP); openP = false; altP = ''; }
+      if (openT) { html += '</tbody></table></div>'; openT = false; if (par && altRows) html += `<div class="r-tablewrap r-alt" lang="am"><table class="r-table c4"><tbody>${altRows}</tbody></table></div>`; altRows = ''; }
       if (notes) { html += `<aside class="r-fn">${notes}</aside>`; notes = ''; } };
     for (let i = a; i < b || (i === b && bb > 0 && i < pages.length); i++) {
       const anchor = `<span class="pm" id="pm-${i}" data-i="${i}"></span>`;
@@ -69,23 +94,26 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
         if (k < from || k >= to) return;
         const id = `b-${i}-${k}`, m = k === 0 ? anchor : '';
         const x = markText(blk.x, mark && mark.page === i && mark.block === k ? mark : null);
-        if (blk.t === 'fn') { const n = `<p id="${id}">${m}${x}</p>`; if (openP) notes += n; else html += `<aside class="r-fn">${n}</aside>`; return; }
-        if (blk.t === 'p' && blk.cont && k === 0 && openP) { html += ` ${m}<span id="${id}">${x}</span>`; return; }  // paragraph runs on across the printed page break
+        if (blk.t === 'fn') { const n = `<p id="${id}">${m}${x}</p>${altEl(am(i, k))}`; if (openP) notes += n; else html += `<aside class="r-fn">${n}</aside>`; return; }
+        if (blk.t === 'p' && blk.cont && k === 0 && openP) { html += ` ${m}<span id="${id}">${x}</span>`; if (par) altP += ' ' + am(i, k); return; }  // paragraph runs on across the printed page break
         if (blk.t === 'p' && TABLE_ROW.test(blk.x)) {                 // "a | b | c" rows (rebuilt tables) become a real table
           if (openP) closeP();
           if (!openT) { const n = blk.x.split(/ \| |^\| /).length;
             html += `<div class="r-tablewrap"><table class="r-table${n >= 6 ? ' c6' : n >= 4 ? ' c4' : ''}"><tbody>`; openT = true; }
-          html += `<tr id="${id}">${x.split(/ \| |^\| /).map((c, n) => `<td>${n ? '' : m}${c}</td>`).join('')}</tr>`; return;
+          html += `<tr id="${id}">${x.split(/ \| |^\| /).map((c, n) => `<td>${n ? '' : m}${c}</td>`).join('')}</tr>`;
+          if (par) altRows += `<tr>${am(i, k).split(/ \| |^\| /).map((c) => `<td>${c}</td>`).join('')}</tr>`;
+          return;
         }
         closeP();
-        if (blk.t === 'h1') html += `<h2 class="r-h1" id="${id}">${m}${x}</h2>`;
-        else if (blk.t === 'h2') html += `<h3 class="r-h2" id="${id}">${m}${x}</h3>`;
+        if (!blk.x && blk.t !== 'toc') { html += `${m}<span id="${id}"></span>${altEl(am(i, k))}`; return; }   // a unit the translation leaves empty
+        if (blk.t === 'h1') html += `<h2 class="r-h1" id="${id}">${m}${x}</h2>${altEl(am(i, k), ' r-alt-h')}`;
+        else if (blk.t === 'h2') html += `<h3 class="r-h2" id="${id}">${m}${x}</h3>${altEl(am(i, k), ' r-alt-h')}`;
         else if (blk.t === 'pre') html += `<pre class="r-pre" id="${id}">${m}${x}</pre>`;
-        else if (blk.t === 'c') html += `<p class="r-c" id="${id}">${m}${x}</p>`;
+        else if (blk.t === 'c') html += `<p class="r-c" id="${id}">${m}${x}</p>${altEl(am(i, k), ' r-alt-c')}`;
         else if (blk.t === 'toc') html += `<nav class="r-tocblock" id="${id}">${m}<ol>${toc.map((t, n) =>
           (t.absent ? `<li class="lvl${t.level} absent"><button disabled><span>${esc(t.title)}</span><small>${esc(tr('absent'))}</small></button></li>`
             : `<li class="lvl${t.level}"><button data-tk="${n}"><span>${esc(t.title)}</span><small data-tkp="${n}">${esc(tocPageText(n))}</small></button></li>`)).join('')}</ol></nav>`;
-        else { html += `<p id="${id}"${LIST_ITEM.test(blk.x) ? ' class="li"' : ''}>${m}${x}`; openP = true; }
+        else { html += `<p id="${id}"${LIST_ITEM.test(blk.x) ? ' class="li"' : ''}>${m}${x}`; openP = true; if (par) altP = am(i, k); }
       });
     }
     closeP();
@@ -95,7 +123,8 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
   root.innerHTML = `<div class="reader" data-theme="${prefs.theme}">
     <header class="r-top">
       <button class="r-icon" data-act="exit" aria-label="${esc(tr('back'))}">←</button>
-      <div class="r-title"><b>${esc(book.titleAm || text.titleAm)}</b><small>${esc(book.author || '')}</small></div>
+      <div class="r-title"><b></b><small>${esc(book.author || '')}</small></div>
+      ${loadEn ? `<button class="r-icon r-lang" data-act="lang" aria-label="${esc(tr('switchLang'))}" title="${esc(tr('switchLang'))}"></button>` : ''}
       <button class="r-icon" data-act="toc" aria-label="${esc(tr('contents'))}">☰</button>
       <button class="r-icon" data-act="search" aria-label="${esc(tr('search'))}">⌕</button>
       <button class="r-icon" data-act="orig" aria-label="${esc(tr('original'))}" title="${esc(tr('original'))}">📄</button>
@@ -118,13 +147,35 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
   const panelEl = el.querySelector('.r-panel'), scrim = el.querySelector('.r-scrim');
   const bookEl = el.querySelector('.r-book'), sheet = el.querySelector('.r-sheet'), cols = sheet.querySelector('.r-cols');
   const leaf = sheet.querySelector('.r-turn'), ghost = leaf.querySelector('.r-cols'), shade = leaf.querySelector('.r-shade');
-  const note = () => `<p class="r-note">ⓘ ${esc(tr('ocrNote'))}</p>`;
+  const note = () => (tl === 'am' ? `<p class="r-note">ⓘ ${esc(tr('ocrNote'))}</p>`
+    : `<p class="r-note" lang="en">ⓘ ${esc(textEn?.translatorNote || '')}</p>`);
+  const LANG_LABEL = { am: 'አማ', en: 'EN', both: 'አ·E' };
+  function showLangUi() {
+    el.querySelector('.r-title b').textContent = tl === 'am' ? (book.titleAm || textAm.titleAm) : (textEn?.titleEn || book.titleEn || book.titleAm);
+    const lb = el.querySelector('.r-lang'); if (lb) lb.textContent = LANG_LABEL[tl];
+    el.dataset.tl = tl;
+    for (const c of [article, cols, ghost]) c.lang = tl === 'am' ? 'am' : 'en';
+  }
+  // switch the text language, keeping the reader on the same printed page
+  async function setTextLang(next) {
+    if (next !== 'am' && !textEn) {
+      const lb = el.querySelector('.r-lang'); if (lb) lb.textContent = '…';
+      try { textEn = await loadEn(); } catch { showLangUi(); alert(tr('enFailed')); return; }
+    }
+    tl = next; local.set(langKey, tl);
+    pages = tl === 'am' ? textAm.pages : textEn.pages;
+    toc = tl === 'am' ? tocAm : tocOf(textEn).map((t, n) => ({ ...t, b: tocAm[n]?.b ?? t.b }));
+    searchState = { q: '', results: [] };
+    showLangUi(); applyPrefs(); relayout(current);
+    if (panel === 'toc') renderToc(); else if (panel === 'settings') renderSettings();
+  }
 
   function applyPrefs() {
     el.dataset.theme = prefs.theme;
     el.style.setProperty('--r-size', `${SIZES[prefs.size]}px`);
     el.style.setProperty('--r-lh', SPACING[prefs.spacing]);
-    el.style.setProperty('--r-font', FONTS[prefs.font][0]);
+    el.style.setProperty('--r-font', (tl === 'am' ? FONTS : FONTS_EN)[prefs.font][0]);
+    el.style.setProperty('--r-font-am', FONTS[prefs.font][0]);
     el.style.setProperty('--r-width', { narrow: '34em', normal: '40em', wide: '52em' }[prefs.width]);
     el.classList.toggle('justify', prefs.justify);
     el.classList.toggle('book', prefs.mode === 'book');
@@ -269,8 +320,8 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
   // Page numbers for the whole book at the current layout: each segment is measured off-screen while the reader is idle
   // (never while a finger is on the page), and the result is remembered for this screen size and these settings.
   const layout = { total: 0, offset: [], tocPage: [] };
-  const textSig = pages.reduce((n, p) => p.blocks.reduce((m, b) => m + b.x.length, n), 0);
-  const layoutKey = `gab-layout-${book.id}`;
+  const textSig = () => pages.reduce((n, p) => p.blocks.reduce((m, b) => m + b.x.length, n), 0);
+  const layoutKey = () => `gab-layout-${book.id}-${tl}`;
   const idle = window.requestIdleCallback ? (fn) => requestIdleCallback(fn, { timeout: 2000 }) : (fn) => setTimeout(() => fn({ timeRemaining: () => 8 }), 40);
   let measureRun = 0, lastInput = 0;
   function applyLayout(counts, tocCol) {
@@ -285,8 +336,8 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
     const run = ++measureRun;
     (document.fonts ? document.fonts.ready : Promise.resolve()).then(() => {
       if (run !== measureRun) return;
-      const sig = [sheet.clientWidth, sheet.clientHeight, prefs.size, prefs.spacing, prefs.font, prefs.width, prefs.justify, segs.length, textSig].join('|');
-      const saved = local.get(layoutKey, null);
+      const sig = [sheet.clientWidth, sheet.clientHeight, prefs.size, prefs.spacing, prefs.font, prefs.width, prefs.justify, segs.length, textSig(), tl].join('|');
+      const saved = local.get(layoutKey(), null);
       if (saved && saved.sig === sig) { applyLayout(saved.counts, saved.tocCol); return; }
       const box = document.createElement('div'); box.className = 'r-cols r-text r-measure'; box.setAttribute('aria-hidden', 'true');
       sheet.appendChild(box); metrics(box);
@@ -307,7 +358,7 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
         } while (k < segs.length && deadline.timeRemaining() > 6);
         if (k < segs.length) { idle(work); return; }
         box.remove();
-        try { local.set(layoutKey, { sig, counts, tocCol }); } catch { /* storage full: measure again next time */ }
+        try { local.set(layoutKey(), { sig, counts, tocCol }); } catch { /* storage full: measure again next time */ }
         applyLayout(counts, tocCol);
       };
       idle(work);
@@ -444,7 +495,8 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
     searchState = { q: q.trim(), results: [] };
     if (searchState.q.length < 2) return showResults();
     const results = [], eth = isEthiopic(q), fq = foldEthiopic(q.toLowerCase().trim()), qwords = analyze(q);
-    pages.forEach((p, i) => p.blocks.forEach((b, k) => {
+    const other = eth && tl !== 'am';                  // Ethiopic query while reading English: search the Amharic
+    (other ? textAm.pages : pages).forEach((p, i) => p.blocks.forEach((b, k) => {
       if (results.length >= 300 || b.t === 'toc') return;
       if (eth) {
         const ft = foldEthiopic(b.x.toLowerCase()); let at = ft.indexOf(fq);
@@ -458,13 +510,14 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
         }
       }
     }));
+    if (other) results.forEach((r) => { r.other = true; });
     searchState.results = results; showResults();
   }
   function showResults() {
     const box = panelEl.querySelector('.rp-results'); if (!box) return;
     const r = searchState.results;
     if (!searchState.q) { box.innerHTML = ''; return; }
-    box.innerHTML = `<p class="rp-count">${r.length ? esc(tr('results', { n: r.length >= 300 ? '300+' : r.length })) : esc(tr('noResults'))}</p>
+    box.innerHTML = `<p class="rp-count">${r.length ? esc(tr('results', { n: r.length >= 300 ? '300+' : r.length })) + (r[0]?.other ? ` · ${esc(tr('alsoAmharic'))}` : '') : esc(tr('noResults'))}</p>
       <ol class="rp-hits">${r.map((h, k) => {
         const s = Math.max(0, h.at - 40), e = Math.min(h.text.length, h.at + h.len + 60);
         const where = toc.filter((t) => t.page <= h.page && t.level === 1).pop()?.title || '';
@@ -473,8 +526,14 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
   }
   function showHit(h) {
     closePanel();
-    const mark = { page: h.page, block: h.block, at: h.at, len: h.len };
     current = h.page;
+    if (h.other) {                                      // a hit in the Amharic: open its paragraph in the English and light it up
+      const id = `b-${h.page}-${h.block}`;
+      goTo(h.page, id);
+      requestAnimationFrame(() => { const n = el.querySelector(`.r-text #${CSS.escape(id)}`); if (n) { n.classList.add('r-flash'); setTimeout(() => n.classList.remove('r-flash'), 2400); } });
+      return;
+    }
+    const mark = { page: h.page, block: h.block, at: h.at, len: h.len };
     if (prefs.mode === 'book') { bookShow(h.page, { mark }); return; }
     renderScroll(mark);
     jumping = Date.now(); article.querySelector('mark')?.scrollIntoView({ block: 'center' });
@@ -485,14 +544,17 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
     const opt = (key, values, label) => `<div class="rp-row"><span>${esc(tr(label))}</span><div class="seg">${values.map(([v, txt]) =>
       `<button data-pref="${key}" data-val="${v}" class="${String(prefs[key]) === String(v) ? 'on' : ''}">${txt}</button>`).join('')}</div></div>`;
     panelEl.innerHTML = `${panelHead(tr('settings'))}
+      ${loadEn ? `<div class="rp-row"><span>${esc(tr('textLang'))}</span><div class="seg">${['am', 'en', 'both'].map((v) =>
+        `<button data-tl="${v}" class="${tl === v ? 'on' : ''}">${esc(tr(v))}</button>`).join('')}</div></div>` : ''}
       ${opt('mode', [['book', '📖 ' + esc(tr('book'))], ['scroll', '↕ ' + esc(tr('scroll'))]], 'mode')}
       <div class="rp-row"><span>${esc(tr('size'))}</span><div class="seg"><button data-step="size" data-d="-1">A−</button><b>${SIZES[prefs.size]}</b><button data-step="size" data-d="1">A+</button></div></div>
       ${opt('spacing', SPACING.map((v, k) => [k, `${v}`]), 'spacing')}
-      ${opt('font', Object.entries(FONTS).map(([k, v]) => [k, `<span style="font-family:${v[0]}">ሀ ${esc(v[lang === 'am' ? 2 : 1])}</span>`]), 'font')}
+      ${opt('font', Object.entries(FONTS).map(([k, v]) => [k, `<span style="font-family:${(tl === 'am' ? v : FONTS_EN[k])[0]}">${tl === 'am' ? 'ሀ' : 'Aa'} ${esc(v[lang === 'am' ? 2 : 1])}</span>`]), 'font')}
       ${opt('theme', THEMES.map((v) => [v, esc(tr(v))]), 'theme')}
       ${opt('width', ['narrow', 'normal', 'wide'].map((v) => [v, esc(tr(v))]), 'width')}
       ${opt('justify', [[false, '☰'], [true, '≡']], 'justify')}
       ${pdf ? `<div class="rp-row"><button class="btn wide" data-act="pdf">⤓ ${esc(tr('pdf'))}</button></div>` : ''}
+      ${pdfEn ? `<div class="rp-row"><button class="btn wide" data-act="pdf-en">⤓ ${esc(tr('pdfEn'))}</button></div>` : ''}
       <div class="rp-row"><button class="btn wide" data-act="offline">${esc(offline.has() ? '✓ ' + tr('offline') + ' · ' + tr('removeOffline') : '⤓ ' + tr('download'))}</button></div>
       <p class="rp-preview" style="font-family:var(--r-font)">${esc((pages.find((p) => p.blocks.some((b) => b.t === 'p'))?.blocks.find((b) => b.t === 'p')?.x || '').slice(0, 140))}…</p>`;
   }
@@ -548,9 +610,13 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
       let bms = local.get(bmKey, []);
       bms = bms.some((x) => x.page === current) ? bms.filter((x) => x.page !== current) : [...bms, { page: current, ts: Date.now() }].sort((a, c) => a.page - c.page);
       local.set(bmKey, bms); updatePos();
-    } else if (act === 'pdf') {
-      const a = document.createElement('a'); a.href = await pdf();
-      a.download = `${(book.titleEn || `Book ${book.id}`).replace(/[^\w .,'()-]+/g, '').trim() || `Book ${book.id}`}.pdf`; a.click();
+    } else if (act === 'pdf' || act === 'pdf-en') {
+      const a = document.createElement('a'); a.href = await (act === 'pdf' ? pdf() : pdfEn());
+      a.download = `${(book.titleEn || `Book ${book.id}`).replace(/[^\w .,'()-]+/g, '').trim() || `Book ${book.id}`}${act === 'pdf-en' ? ' (English)' : ''}.pdf`; a.click();
+    } else if (act === 'lang') {
+      setTextLang({ am: 'en', en: 'both', both: 'am' }[tl]);
+    } else if (b.dataset.tl) {
+      if (b.dataset.tl !== tl) setTextLang(b.dataset.tl);
     } else if (act === 'offline') {
       b.disabled = true; b.textContent = tr('downloading');
       await (offline.has() ? offline.remove() : offline.save()); renderSettings();
@@ -588,8 +654,8 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
     document.removeEventListener('fullscreenchange', onFsChange); document.removeEventListener('webkitfullscreenchange', onFsChange);
     measureRun++; document.removeEventListener('keydown', onKey); window.removeEventListener('resize', onResize); document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#1f4d3a'); }
 
-  applyPrefs();
-  updatePos();
-  relayout(current);
+  showLangUi();
+  if (wantLang !== 'am') setTextLang(wantLang).then(() => { if (tl === 'am') { applyPrefs(); updatePos(); relayout(current); } });
+  else { applyPrefs(); updatePos(); relayout(current); }
   return { cleanup };
 }

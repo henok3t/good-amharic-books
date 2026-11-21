@@ -376,3 +376,19 @@ html[lang="am"] .reading h1 { font-family: var(--ethi); }
 .r-table.c6 td { overflow-wrap: anywhere; padding: .2em .25em; }
 .r-table td { border: 1px solid var(--line, #d9cfb4); padding: .25em .35em; vertical-align: top; }
 .r-table tr:first-child td { background: rgba(200, 170, 100, .14); font-weight: 600; }
+/* English translation */
+.reader[data-tl="en"] .r-text, .reader[data-tl="both"] .r-text { hyphens: auto; -webkit-hyphens: auto; }
+.r-alt { font-family: var(--r-font-am) !important; font-size: .86em; color: var(--r-muted); margin: .15em 0 .9em; text-indent: 0 !important; }
+.r-alt.r-alt-h { font-size: .8em; margin-top: -.4em; text-align: inherit; }
+.r-alt.r-alt-c { text-align: center; }
+.r-fn .r-alt { font-size: .82em; }
+.r-lang { font: 700 12px var(--font) !important; letter-spacing: .02em; min-width: 44px; }
+.r-flash { animation: rflash 2.4s ease; }
+@keyframes rflash { 0%, 40% { background: color-mix(in srgb, var(--r-accent) 22%, transparent); } 100% { background: transparent; } }
+.badge-en { position: absolute; top: 8px; right: 8px; z-index: 1; padding: 2px 7px; border-radius: 99px; background: #1f4d3a; color: #fff; font: 700 11px var(--font); }
+@media (max-width: 440px) {
+  .r-top { gap: 0 !important; padding-left: 4px; padding-right: 4px; }
+  .r-icon { width: 34px; font-size: 17px; }
+  .r-lang { min-width: 40px; width: 40px; font-size: 11px !important; }
+  .r-title { min-width: 0; }
+}

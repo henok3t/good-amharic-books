@@ -1,6 +1,6 @@
 """Typeset a converted book as a clean A5 PDF (and merge its original scans into one PDF).
 
-    python3 scripts/make_book_pdf.py <book id> <out dir> [--cover cover.jpg] [--scans part1.pdf part2.pdf ...]
+    python3 scripts/make_book_pdf.py <book id> <out dir> [--cover cover.jpg] [--scans part1.pdf part2.pdf ...] [--lang en]
 
 Writes <out dir>/<id>-text.pdf (typeset from data/text/<id>.json) and, with --scans, <out dir>/<id>-scan.pdf.
 Fonts: Noto Serif Ethiopic / Noto Sans Ethiopic (Debian packages fonts-noto-core, fonts-noto-extra).
@@ -63,28 +63,40 @@ h2.chapter + p, h3 + p { text-indent: 0; }
 .end { text-align: center; margin-top: 10mm; color: #7a6a50; }
 """
 
+EN_CSS = """
+html { font-family: 'Noto Serif', serif; font-size: 10.4pt; line-height: 1.6; hyphens: auto; }
+@page { @top-center { font-family: 'Noto Sans'; } @bottom-center { font-family: 'Noto Sans'; } }
+.cover .en, .titlepage .en { font-family: 'Noto Sans Ethiopic'; }
+.cover h1 { font-family: 'Noto Serif'; font-size: 24pt; }
+p { text-align: justify; }
+"""
+
 def build_html(book, text, cover):
+    en = text.get('lang') == 'en'
     pages = text['pages']
     toc = text['toc']
     first_body = next((i for i, p in enumerate(pages) if p.get('kind') == 'contents'), -1) + 1
     anchors = {}
     for k, t in enumerate(toc): anchors.setdefault((t['page'], t['title']), f'toc{k}')
-    out = [f'<!doctype html><html lang="am"><head><meta charset="utf-8"><title>{esc(book["titleAm"])}</title>'
-           f'<meta name="author" content="{esc(book.get("author"))}"><style>{CSS}</style></head><body>']
-    out.append(f'<section class="cover">{f"<img src=\"{esc(cover)}\">" if cover else ""}<h1>{esc(book["titleAm"])}</h1>'
-               f'<div class="en">{esc(book.get("titleEn"))}</div><div class="author">{esc(book.get("author"))}</div></section>')
-    out.append(f'<section class="titlepage"><h1>{esc(book["titleAm"])}</h1><div class="en">{esc(book.get("titleEn"))}</div>'
-               f'<div class="author">{esc(book.get("author"))}</div>'
-               f'<div class="note">ይህ ዲጂታል እትም ከተቃኘው መጽሐፍ ተቀይሮና ተገምግሞ ለንባብ በአዲስ መልክ የተዘጋጀ ነው፤ የገጽ አከፋፈሉ ከዋናው መጽሐፍ ይለያል።<br>'
-               f'Digital edition converted from the scanned book, proofread and newly typeset; its pages do not follow the printed edition. '
-               f'Good Amharic Books · private preview · {date.today():%Y-%m-%d}</div></section>')
+    title, other = (text.get('titleEn') or book.get('titleEn'), book['titleAm']) if en else (book['titleAm'], book.get('titleEn'))
+    out = [f'<!doctype html><html lang="{"en" if en else "am"}"><head><meta charset="utf-8"><title>{esc(title)}</title>'
+           f'<meta name="author" content="{esc(book.get("author"))}"><style>{CSS}{EN_CSS if en else ""}</style></head><body>']
+    out.append(f'<section class="cover">{f"<img src=\"{esc(cover)}\">" if cover else ""}<h1>{esc(title)}</h1>'
+               f'<div class="en">{esc(other)}</div><div class="author">{esc(book.get("author"))}</div></section>')
+    note = (f'{esc(text.get("translatorNote", ""))}<br>English translation of the scanned Amharic edition; its pages do not follow the '
+            f'printed edition. Good Amharic Books · private preview · {date.today():%Y-%m-%d}') if en else (
+            f'ይህ ዲጂታል እትም ከተቃኘው መጽሐፍ ተቀይሮና ተገምግሞ ለንባብ በአዲስ መልክ የተዘጋጀ ነው፤ የገጽ አከፋፈሉ ከዋናው መጽሐፍ ይለያል።<br>'
+            f'Digital edition converted from the scanned book, proofread and newly typeset; its pages do not follow the printed edition. '
+            f'Good Amharic Books · private preview · {date.today():%Y-%m-%d}')
+    out.append(f'<section class="titlepage"><h1>{esc(title)}</h1><div class="en">{esc(text.get("subtitleEn") if en and text.get("subtitleEn") else other)}</div>'
+               f'<div class="author">{esc(book.get("author"))}</div><div class="note">{note}</div></section>')
     # the book's own front matter (title page, imprint, dedication ...) flows together; it doesn't keep the printed page breaks
     front = [''.join(f'<p class="c">{esc(b["x"])}</p>' for b in p['blocks'] if b['x'].strip())
              for p in pages[:max(first_body - 1, 0)] if p.get('kind') != 'contents']
     front = [f for f in front if f]
     if front: out.append('<section class="front">' + '<p class="orn">✻</p>'.join(f'<div class="fpart">{f}</div>' for f in front) + '</section>')
-    out.append('<section class="contents"><h2>ማውጫ</h2><ol>' + ''.join(
-        (f'<li class="l{t["level"]} absent">{esc(t["title"])}<span class="abs">በተቃኘው ቅጂ የለም · not in the scanned copy</span></li>' if t.get('absent') else
+    out.append(f'<section class="contents"><h2>{"Contents" if en else "ማውጫ"}</h2><ol>' + ''.join(
+        (f'<li class="l{t["level"]} absent">{esc(t["title"])}<span class="abs">{"not in the scanned copy" if en else "በተቃኘው ቅጂ የለም · not in the scanned copy"}</span></li>' if t.get('absent') else
          f'<li class="l{t["level"]}"><a href="#{anchors[(t["page"], t["title"])]}">{esc(t["title"])}</a></li>') for t in toc
         if t['page'] >= first_body) + '</ol></section>')
     out.append('<main>')
@@ -96,6 +108,9 @@ def build_html(book, text, cover):
         mark += ''.join(f'<a id="{a}"></a>' for key, a in anchors.items() if key[0] == i and not any(b['x'] == key[1] for b in p['blocks']))
         for k, b in enumerate(p['blocks']):
             if b['t'] == 'toc': continue
+            if not b['x'].strip():                           # continuation or empty unit of the translation
+                if k == 0 and mark: out.append(mark)
+                continue
             if b['t'] == 'fn':                                # footnotes follow the paragraph they interrupt
                 (notes.append(esc(b['x'])) if open_p else out.append(f'<div class="fn"><p>{esc(b["x"])}</p></div>')); continue
             x = esc(b['x'])
@@ -126,18 +141,21 @@ def build_html(book, text, cover):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('book_id', type=int); ap.add_argument('out')
-    ap.add_argument('--cover'); ap.add_argument('--scans', nargs='*')
+    ap.add_argument('--cover'); ap.add_argument('--scans', nargs='*'); ap.add_argument('--lang', default='am')
     a = ap.parse_args()
     from weasyprint import HTML
-    text = json.load(open(os.path.join(ROOT, f'data/text/{a.book_id}.json')))
+    sfx = '.en' if a.lang == 'en' else ''
+    text = json.load(open(os.path.join(ROOT, f'data/text/{a.book_id}{sfx}.json')))
     cat = json.load(open(os.path.join(ROOT, 'data/catalog.json')))
     book = next(b for b in cat['books'] if b['id'] == a.book_id)
     os.makedirs(a.out, exist_ok=True)
     doc = build_html(book, text, a.cover and os.path.abspath(a.cover))
-    open(os.path.join(a.out, f'{a.book_id}-text.html'), 'w').write(doc)
+    name = f'{a.book_id}-text{"-en" if a.lang == "en" else ""}'
+    open(os.path.join(a.out, f'{name}.html'), 'w').write(doc)
     pdf = HTML(string=doc, base_url='/').render()
-    pdf.metadata.title = book['titleAm']; pdf.metadata.authors = [book.get('author') or '']; pdf.metadata.lang = 'am'
-    pdf.write_pdf(os.path.join(a.out, f'{a.book_id}-text.pdf'))
+    pdf.metadata.title = (text.get('titleEn') or book.get('titleEn')) if a.lang == 'en' else book['titleAm']
+    pdf.metadata.authors = [book.get('author') or '']; pdf.metadata.lang = a.lang
+    pdf.write_pdf(os.path.join(a.out, f'{name}.pdf'))
     print('text pdf:', len(pdf.pages), 'pages')
     if a.scans:
         from pypdf import PdfWriter, PdfReader
