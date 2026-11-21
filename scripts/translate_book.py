@@ -147,6 +147,12 @@ NUM = re.compile(r'\d+')
 ETH_DIGITS = {c: v for c, v in zip('፩፪፫፬፭፮፯፰፱', range(1, 10))}
 
 
+def proper(t):
+    """Capitalized words that are not at the start of a sentence (likely names and titles)."""
+    return {m.group(0) for m in re.finditer(r'\b[A-Z][a-z]{3,}\b', t)
+            if m.start() > 0 and not re.search(r'[.!?:;“"(\[—–-]\s*$|^\s*$', t[max(0, m.start() - 3):m.start()])}
+
+
 def checks(units, eng, prev=None):
     flags = []
     for u in units:
@@ -166,7 +172,7 @@ def checks(units, eng, prev=None):
         if prev is not None and u['id'] in prev and prev[u['id']] != e:   # a later stage changed it: numbers and names must survive
             pn, en = Counter(NUM.findall(prev[u['id']])), Counter(NUM.findall(e))
             if pn != en: flags.append(f'[{u["id"]}] CHANGED NUMBERS since the previous stage: {sorted((pn - en).elements())[:6]} -> {sorted((en - pn).elements())[:6]}')
-            pc = set(re.findall(r'\b[A-Z][a-z]{3,}\b', prev[u['id']])); ec = set(re.findall(r'\b[A-Z][a-z]{3,}\b', e))
+            pc, ec = proper(prev[u['id']]), proper(e)
             gone = pc - ec - {'The', 'This', 'That', 'These', 'There', 'They', 'When', 'What', 'However', 'Therefore', 'Thus', 'Then', 'And', 'But', 'For'}
             if gone: flags.append(f'[{u["id"]}] NAMES dropped since the previous stage: {", ".join(sorted(gone)[:6])}')
     return flags
