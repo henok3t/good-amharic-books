@@ -212,6 +212,13 @@ def cmd_check(work, part=None):
     print('total flags', total)
 
 
+def curly(t):
+    """Straight quotes to typographic ones (some parts were written with straight quotes)."""
+    t = re.sub(r'(^|[\s(\[—–-])"', r'\1“', t); t = t.replace('"', '”')
+    t = re.sub(r"(^|[\s(\[—–-])'", r'\1‘', t); t = t.replace("'", '’')
+    return t
+
+
 def cmd_assemble(book_id, work):
     src, U = load(work)
     eng = {}
@@ -232,7 +239,7 @@ def cmd_assemble(book_id, work):
                 x = eng.get(uid)
                 if x is None: missing += 1; x = ''
             else: x = ''                                 # continuation block: its text is in the unit it continues
-            nb = {'t': b['t'], 'x': x}
+            nb = {'t': b['t'], 'x': curly(x)}
             if b.get('cont'): nb['cont'] = True
             bl.append(nb)
         pages.append({**{k: v for k, v in pg.items() if k != 'blocks'}, 'blocks': bl})
