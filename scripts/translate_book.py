@@ -113,7 +113,7 @@ def cmd_init(book_id, work):
 def parse_units(path):
     if not os.path.exists(path): return {}
     s = open(path).read()
-    nm = re.search(r'^NOTES:', s, re.M)                  # the agent's notes at the end are not part of the last unit
+    nm = re.search(r'^(NOTES|SUMMARY):', s, re.M)        # the agent's notes at the end are not part of the last unit
     if nm: s = s[:nm.start()]
     marks = list(UNIT_RE.finditer(s)); out = {}
     for n, m in enumerate(marks):
