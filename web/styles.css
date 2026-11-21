@@ -249,11 +249,20 @@ html[lang="am"] .reading h1 { font-family: var(--ethi); }
 .r-body { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; scroll-padding-top: 12px; }
 .r-text { max-width: var(--r-width, 40em); margin: 0 auto; padding: 18px 22px 40vh; font-family: var(--r-font), 'Noto Sans Ethiopic', serif;
   font-size: var(--r-size, 20px); line-height: var(--r-lh, 1.8); }
-.r-text p { margin: 0 0 .9em; text-indent: 1.4em; }
-.r-text p.cont { text-indent: 0; }
+.r-text p { margin: 0; text-indent: 1.4em; }
+/* book convention: no indent after a heading, a quotation, a centred line, a table or a note; indented paragraphs, no gaps */
+.r-text :is(h2, h3, .r-c, .r-src, .r-q, .r-qt, .r-cm, .li, .r-tablewrap, .r-fn, .r-note, .r-tocblock, .r-alt, nav) + p,
+.r-text p:first-child, .r-text .pm:first-child + p { text-indent: 0; }
 .reader.justify .r-text p { text-align: justify; }
-.r-h1 { font-size: 1.45em; line-height: 1.35; margin: 1.6em 0 .8em; text-align: center; color: var(--r-accent); }
-.r-h2 { font-size: 1.12em; line-height: 1.4; margin: 1.4em 0 .6em; color: var(--r-accent); }
+.r-h1 { font-size: 1.45em; line-height: 1.3; margin: 2.2em 0 1.4em; text-align: center; color: var(--r-accent); text-wrap: balance; hyphens: manual; }
+.r-h1 .r-num { display: block; font-size: .5em; font-weight: 600; letter-spacing: .16em; text-transform: uppercase; color: var(--r-muted); margin-bottom: .7em; }
+.r-h1 .r-ttl { display: block; }
+.r-h1.r-part { font-size: 1.7em; margin: 3em 0 2.2em; }
+.r-h2 { font-size: 1.12em; line-height: 1.35; margin: 1.5em 0 .5em; color: var(--r-accent); text-wrap: balance; hyphens: manual; }
+.r-h2.l3 { font-size: 1.04em; margin-top: 1.3em; }
+.r-h2.l4 { font-size: 1em; font-style: italic; margin-top: 1.2em; }
+.r-h2.pt { font-size: 1em; color: var(--r-ink); font-weight: 650; margin: 1.1em 0 .35em; }
+.r-h2.r-fh { text-align: center; font-size: 1.2em; margin: 1.5em 0 1em; }
 .r-pre { font: inherit; font-size: .85em; line-height: 1.7; white-space: pre-wrap; margin: 0 0 1em; }
 .r-page { position: relative; content-visibility: auto; contain-intrinsic-size: auto 900px; padding-top: 6px; }
 .r-pno { display: flex; align-items: center; gap: 10px; width: 100%; margin: 10px 0 14px; padding: 4px 0; border: 0; background: none; color: var(--r-muted); font: 600 12px var(--font); letter-spacing: .06em; cursor: pointer; }
@@ -323,7 +332,12 @@ html[lang="am"] .reading h1 { font-family: var(--ethi); }
 .reader.book .r-page { content-visibility: visible; contain-intrinsic-size: auto; padding-top: 0; }
 .reader.book .r-pno { justify-content: flex-end; margin: 4px 0 6px; padding: 0; font-size: 10.5px; }
 .reader.book .r-pno::before, .reader.book .r-pno::after { display: none; }
-.reader.book .r-h1 { break-before: column; margin-top: 1.2em; }
+.reader.book .r-h1 { break-before: column; margin-top: 0; padding-top: 2.6em; break-after: avoid; }
+.reader.book .r-h1.r-part { padding-top: 6em; break-after: column; }
+.reader.book .r-c:has(+ .r-h1) { break-before: column; }           /* an invocation stays with the chapter it opens */
+.reader.book .r-c:has(+ .r-h1) + .r-h1 { break-before: auto; padding-top: 1.2em; }
+.reader.book .r-c, .reader.book .r-h2 { break-after: avoid; }
+.reader.book .r-fh, .reader.book .r-tp-end + * { break-before: column; }
 .reader.book .r-page:first-child .r-h1, .reader.book .r-note + .r-page .r-h1 { break-before: auto; }
 .reader.book .r-text p, .reader.book .r-h2 { break-inside: auto; orphans: 2; widows: 2; }
 .reader.book .r-h2 { break-after: avoid; }
@@ -361,7 +375,8 @@ html[lang="am"] .reading h1 { font-family: var(--ethi); }
 .reader.fullscreen .r-top, .reader.fullscreen .r-bottom { z-index: 5; box-shadow: 0 2px 14px rgba(0,0,0,.12); }
 .reader.fullscreen .r-pos::after { content: ''; }
 /* footnotes after the paragraph they interrupt; deeper contents levels */
-.r-fn { margin: .2em 0 1em 1em; padding-left: .8em; border-left: 2px solid var(--r-line); }
+.r-fn { margin: .5em 0 .8em 1em; padding-left: .8em; border-left: 2px solid var(--r-line); }
+.r-fnn { font-weight: 650; margin-right: .25em; }
 .r-fn p { font-size: .72em; line-height: 1.5; text-indent: 0 !important; color: var(--r-muted); margin: 0 0 .3em; text-align: left !important; }
 .rp-toc li.lvl3 button { padding-left: 48px; font-size: 13.5px; color: var(--r-muted); }
 .rp-toc li.lvl4 button { padding-left: 64px; font-size: 13px; color: var(--r-muted); }
@@ -370,18 +385,23 @@ html[lang="am"] .reading h1 { font-family: var(--ethi); }
 .rp-toc li.lvl5 button, .rp-toc li.lvl6 button { padding-left: 78px; font-size: 12.5px; color: var(--r-muted); }
 .r-tocblock li.lvl5 button, .r-tocblock li.lvl6 button { padding-left: 4.8em; font-size: .7em; color: var(--r-muted); }
 .rp-toc li.absent button, .r-tocblock li.absent button { opacity: .45; cursor: default; }
-.r-tablewrap { overflow-x: auto; margin: .6em 0 1em; break-inside: avoid; }
-.r-table { border-collapse: collapse; width: 100%; font-size: .8em; line-height: 1.35; overflow-wrap: break-word; }
-.r-table.c4 { font-size: .7em; } .r-table.c6 { font-size: .58em; }
-.r-table.c6 td { overflow-wrap: anywhere; padding: .2em .25em; }
-.r-table td { border: 1px solid var(--line, #d9cfb4); padding: .25em .35em; vertical-align: top; }
-.r-table tr:first-child td { background: rgba(200, 170, 100, .14); font-weight: 600; }
+.r-tablewrap { overflow-x: auto; margin: .7em 0 1em; }
+.reader.book .r-tablewrap { overflow: visible; }
+.r-table { border-collapse: collapse; width: 100%; font-size: .8em; line-height: 1.35; overflow-wrap: normal; hyphens: manual; }
+.r-table tr { break-inside: avoid; }
+.r-table th { background: color-mix(in srgb, var(--r-accent) 12%, transparent); font-weight: 650; text-align: left; vertical-align: bottom; }
+.r-table td.n, .r-table th.n { white-space: nowrap; }
+.r-table.c4 { font-size: .72em; } .r-table.c6 { font-size: .62em; }
+.r-table.c6 td, .r-table.c6 th { padding: .2em .3em; }
+.r-table td, .r-table th { border: 1px solid var(--r-line); padding: .25em .4em; vertical-align: top; }
 /* English translation */
 .reader[data-tl="en"] .r-text, .reader[data-tl="both"] .r-text { hyphens: auto; -webkit-hyphens: auto; }
 .r-alt { font-family: var(--r-font-am) !important; font-size: .86em; color: var(--r-muted); margin: .15em 0 .9em; text-indent: 0 !important; }
-.r-alt.r-alt-h { font-size: .8em; margin-top: -.4em; text-align: inherit; }
+.r-alt.r-alt-h { font-size: .8em; margin-top: -.3em; }
+.r-alt.r-alt-h1 { text-align: center; font-size: .55em; margin: -.6em 0 1.4em; }
+.r-alt-q, .r-alt-qt, .r-alt-li, .r-alt-cm { margin-left: 1.2em !important; margin-right: 1.2em !important; }
 .r-alt.r-alt-c { text-align: center; }
-.r-fn .r-alt { font-size: .82em; }
+.r-fn .r-alt { font-size: .66em; }
 .r-lang { font: 700 12px var(--font) !important; letter-spacing: .02em; min-width: 44px; }
 .r-flash { animation: rflash 2.4s ease; }
 @keyframes rflash { 0%, 40% { background: color-mix(in srgb, var(--r-accent) 22%, transparent); } 100% { background: transparent; } }
@@ -392,3 +412,24 @@ html[lang="am"] .reading h1 { font-family: var(--ethi); }
   .r-lang { min-width: 40px; width: 40px; font-size: 11px !important; }
   .r-title { min-width: 0; }
 }
+
+/* book conventions: quotations, comments, lists, sources (shared idea with the typeset PDF) */
+.r-text p.r-q, .r-text p.r-qt { margin: .5em 1.2em .6em 1.2em; font-size: .92em; text-indent: 0; }
+.r-text p.r-q { padding-left: 1.2em; text-indent: -1.2em; }
+.r-text p.r-q + p.r-q, .r-text p.r-qt + p.r-qt, .r-text p.li + p.li { margin-top: 0; }
+.r-text p.r-cm, .r-text p.li { padding-left: 1.2em; text-indent: -1.2em; margin: .25em 0; }
+.r-mk { display: inline-block; width: 1.2em; text-indent: 0; font-family: 'Noto Sans Symbols 2', 'Segoe UI Symbol', 'Apple Symbols', sans-serif; font-size: .82em; font-weight: 400; color: var(--r-accent); }
+.r-text p.r-src { text-align: right; text-indent: 0; font-size: .85em; color: var(--r-muted); margin: -.2em 1.2em .8em; }
+.r-endnote { text-align: center !important; text-indent: 0 !important; color: var(--r-muted); font-size: .85em; margin: 2em 1em 0 !important; }
+.r-absnote { font: .8em var(--font); color: var(--r-muted); margin: .8em 0 0; text-indent: 0 !important; }
+.r-tocblock li.part button { font-weight: 700; letter-spacing: .02em; margin-top: .6em; }
+.r-tocblock small { flex: 0 1 auto; white-space: normal; text-align: right; max-width: 45%; }
+/* front matter laid out like a book */
+.r-tp-title { text-align: center; text-indent: 0 !important; font-size: 2em; font-weight: 700; line-height: 1.25; margin: 2.2em 0 .3em !important; color: var(--r-accent); }
+.r-tp-sub { text-align: center; text-indent: 0 !important; font-size: 1.1em; font-style: italic; color: var(--r-muted); margin-bottom: 2.4em !important; }
+.r-tp-line { text-align: center; text-indent: 0 !important; font-size: .95em; }
+.r-text .r-tp-line + .r-tp-line { margin-top: .2em; }
+/* the side-by-side view keeps a small gap between an English paragraph and its Amharic */
+.reader[data-tl="both"] .r-text p:not(.r-alt) + .r-alt { margin-top: .1em; }
+.reader[data-tl="both"] .r-alt { margin-bottom: 1em; }
+.r-alt, [lang="am"] { hyphens: manual; -webkit-hyphens: manual; }

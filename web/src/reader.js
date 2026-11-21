@@ -21,7 +21,6 @@ const THEMES = ['light', 'sepia', 'dark'];
 const DEFAULTS = { size: 2, spacing: 1, font: 'serif', theme: 'sepia', width: 'normal', justify: false, mode: 'book' };
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const LIST_ITEM = /^([—–•-]\s|([ሀ-ፐ]|\d{1,2}(ኛ)?)[./)]\s?)/;
 
 const L = {
   en: { contents: 'Contents', bookmarks: 'Bookmarks', search: 'Search in this book', settings: 'Reading settings', page: 'Page',
@@ -76,15 +75,57 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
   // ---------- flowing text ----------
   function markText(raw, m) { return m ? esc(raw.slice(0, m.at)) + `<mark>${esc(raw.slice(m.at, m.at + m.len))}</mark>` + esc(raw.slice(m.at + m.len)) : esc(raw); }
   const TABLE_ROW = / \| |^\| /;
+  // ---------- book typography helpers ----------
+  const QUOTE = /^[❖◉◎]\s/, COMMENT = /^➢\s/, MARK = /^([❖◉◎➢•✟*—–-])\s+/;
+  const LIST_RE = /^([—–•*✟-]\s|\(\d{1,2}\)\s|([ሀ-ፐ]|[a-z]|\d{1,2}(ኛ)?)[./)]\s?)/;
+  const SRC_RE = /^\([^()]*(\([^()]*\)[^()]*)*\)$/;
+  const isPart = (x) => /^(Part|ክፍል)\s/.test(x);
+  function classify(x, prev) {                           // q: quotation item, cm: author's comment, qt: quoted paragraph, src: source line, li: list item
+    const s = x.trim();
+    if (QUOTE.test(s)) return 'q';
+    if (COMMENT.test(s)) return 'cm';
+    if (SRC_RE.test(s) && s.length < 220 && ['q', 'qt', 'src', 'c'].includes(prev)) return 'src';
+    if (/^[“"]/.test(s) && /[”"]\s*(\([^)]*\))?\s*[።.]?$/.test(s) && s.length > 60) return 'qt';
+    if (LIST_RE.test(s)) return 'li';
+    return '';
+  }
+  function headLevel(x, lvl) {                            // the heading level: from the contents entry, else from its numbering
+    if (lvl) return lvl <= 2 ? 'l2' : lvl === 3 ? 'l3' : 'l4';
+    const m = /^(\d+(?:\.\d+)+)\s/.exec(x);
+    if (m) { const d = m[1].split('.').length; return d <= 2 ? 'l2' : d === 3 ? 'l3' : 'l4'; }
+    if (/^(\d{1,2}|[a-zሀ-ፐ])[.)]\s/.test(x)) return 'pt';
+    return 'l3';
+  }
+  const splitLabel = (x) => (x.includes(' · ') ? x.split(' · ', 2) : (/^(Part|Chapter|ክፍል|ምዕራፍ)\s/.test(x) && x.length < 30 ? [x, ''] : ['', x]));
+  const withMark = (html) => html.replace(/^((?:<span class="pm"[^>]*><\/span>)?)([❖◉◎➢•✟*—–-])\s+/, '$1<span class="r-mk">$2</span>');
+  const cellsOf = (x) => { const c = x.split('|').map((v) => v.trim()); return c; };
+  const tocLevelAt = () => { const m = new Map(); toc.forEach((t) => { if (t.b >= 0 && !t.absent) m.set(`${t.page}-${t.b}`, t.level); }); return m; };
+  const firstBody = Math.max(0, pages.findIndex((p) => p.kind === 'contents' || p.blocks.some((b) => b.t === 'toc')));
+  const absentTitles = () => toc.filter((t) => t.absent && t.level === 1).map((t) => t.title);
+  const endNote = () => (absentTitles().length
+    ? `<p class="r-endnote">${esc(tl === 'am' ? `የተቃኘው ቅጂ እዚህ ያበቃል፤ ${absentTitles().join('፣ ')} አይገኙም።` : `The scanned copy ends here; ${absentTitles().join(', ')} are not available.`)}</p>` : '') + '<p class="r-end">❖ ❖ ❖</p>';
+
   function flowHtml(a, b, mark, ab = 0, bb = 0) {        // pages a..b-1; starts at block ab of page a; with bb, also page b's first bb blocks
-    let html = '', openP = false, openT = false, notes = '';   // footnotes wait until the paragraph they interrupt has ended
+    let html = '', openP = false, notes = '', rows = null, prev = '', pendingAnchor = '';
+    const levels = tocLevelAt();
     // 'both': the Amharic of each paragraph, heading, note and table follows its English, in a quieter style
-    const par = tl === 'both', am = (i, k) => esc(textAm.pages[i].blocks[k]?.x || '');
-    let altP = '', altRows = '';
-    const altEl = (x, cls = '') => (par && x ? `<p class="r-alt${cls}" lang="am">${x}</p>` : '');
+    const par = tl === 'both', am = (i, k) => textAm.pages[i].blocks[k]?.x || '';
+    let altP = '', altSrc = '';
+    const same = (x, y) => x.replace(/\s+/g, '') === y.replace(/\s+/g, '');
+    const altEl = (x, own, cls = '') => (par && x && !same(x, own) ? `<p class="r-alt${cls}" lang="am">${esc(x)}</p>` : '');
+    const tableHtml = (rs, alt) => {
+      const n = Math.max(...rs.map((r) => r.length));
+      const head = rs.length > 1 && !/\d/.test(rs[0].map((c) => c.replace(/<[^>]+>/g, '')).join(' '));
+      const cell = (c, tag) => `<${tag}${/^[\d.,–\s()%]+$/.test(c.replace(/<[^>]+>/g, '')) ? ' class="n"' : ''}>${c}</${tag}>`;
+      return `<div class="r-tablewrap${alt ? ' r-alt' : ''}"${alt ? ' lang="am"' : ''}><table class="r-table${n >= 6 ? ' c6' : n >= 4 ? ' c4' : ''}">`
+        + (head ? `<thead><tr>${rs[0].map((c) => cell(c, 'th')).join('')}</tr></thead>` : '')
+        + `<tbody>${rs.slice(head ? 1 : 0).map((r) => `<tr>${r.map((c) => cell(c, 'td')).join('')}</tr>`).join('')}</tbody></table></div>`;
+    };
+    let altRows = [];
     const closeP = () => {
-      if (openP) { html += '</p>' + altEl(altP); openP = false; altP = ''; }
-      if (openT) { html += '</tbody></table></div>'; openT = false; if (par && altRows) html += `<div class="r-tablewrap r-alt" lang="am"><table class="r-table c4"><tbody>${altRows}</tbody></table></div>`; altRows = ''; }
+      if (openP) { html += '</p>' + (par && altP && !same(altP, altSrc) ? `<p class="r-alt${prev === 'q' || prev === 'qt' || prev === 'li' || prev === 'cm' ? ' r-alt-' + prev : ''}" lang="am">${esc(altP)}</p>` : ''); openP = false; altP = ''; altSrc = ''; }
+      if (rows) { html += tableHtml(rows, false); if (par && altRows.length) html += tableHtml(altRows, true); rows = null; altRows = []; }
+      if (pendingAnchor) { html += pendingAnchor; pendingAnchor = ''; }
       if (notes) { html += `<aside class="r-fn">${notes}</aside>`; notes = ''; } };
     for (let i = a; i < b || (i === b && bb > 0 && i < pages.length); i++) {
       const anchor = `<span class="pm" id="pm-${i}" data-i="${i}"></span>`;
@@ -94,26 +135,57 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
         if (k < from || k >= to) return;
         const id = `b-${i}-${k}`, m = k === 0 ? anchor : '';
         const x = markText(blk.x, mark && mark.page === i && mark.block === k ? mark : null);
-        if (blk.t === 'fn') { const n = `<p id="${id}">${m}${x}</p>${altEl(am(i, k))}`; if (openP) notes += n; else html += `<aside class="r-fn">${n}</aside>`; return; }
-        if (blk.t === 'p' && blk.cont && k === 0 && openP) { html += ` ${m}<span id="${id}">${x}</span>`; if (par) altP += ' ' + am(i, k); return; }  // paragraph runs on across the printed page break
-        if (blk.t === 'p' && TABLE_ROW.test(blk.x)) {                 // "a | b | c" rows (rebuilt tables) become a real table
-          if (openP) closeP();
-          if (!openT) { const n = blk.x.split(/ \| |^\| /).length;
-            html += `<div class="r-tablewrap"><table class="r-table${n >= 6 ? ' c6' : n >= 4 ? ' c4' : ''}"><tbody>`; openT = true; }
-          html += `<tr id="${id}">${x.split(/ \| |^\| /).map((c, n) => `<td>${n ? '' : m}${c}</td>`).join('')}</tr>`;
-          if (par) altRows += `<tr>${am(i, k).split(/ \| |^\| /).map((c) => `<td>${c}</td>`).join('')}</tr>`;
-          return;
+        if (blk.t === 'fn') {
+          const n = `<p id="${id}">${m}${x.replace(/^(\*?\d{1,3})\s+/, '<b class="r-fnn">$1</b> ')}</p>${altEl(am(i, k), blk.x, ' r-alt-fn')}`;
+          if (openP || rows) notes += n; else html += `<aside class="r-fn">${n}</aside>`; return;
+        }
+        if (blk.t === 'p' && blk.cont && k === 0 && openP) { html += ` ${m}<span id="${id}">${x}</span>`; if (par) { altP += ' ' + am(i, k); altSrc += ' ' + blk.x; } return; }
+        if (!blk.x && blk.t !== 'toc') {                      // a unit the translation leaves empty (or a removed duplicate)
+          if (rows) { pendingAnchor += `${m}<span id="${id}"></span>`; return; }
+          closeP(); html += `${m}<span id="${id}"></span>${altEl(am(i, k), '')}`; return;
+        }
+        if (blk.t === 'p' && TABLE_ROW.test(blk.x)) {           // "a | b | c" rows (rebuilt tables) become a real table
+          if (openP) { const keep = notes; notes = ''; closeP(); notes = keep; }
+          if (!rows) rows = [];
+          const cs = cellsOf(x); cs[0] = m + `<span id="${id}"></span>` + cs[0];
+          rows.push(cs); if (par) altRows.push(cellsOf(esc(am(i, k))));
+          prev = 'table'; return;
         }
         closeP();
-        if (!blk.x && blk.t !== 'toc') { html += `${m}<span id="${id}"></span>${altEl(am(i, k))}`; return; }   // a unit the translation leaves empty
-        if (blk.t === 'h1') html += `<h2 class="r-h1" id="${id}">${m}${x}</h2>${altEl(am(i, k), ' r-alt-h')}`;
-        else if (blk.t === 'h2') html += `<h3 class="r-h2" id="${id}">${m}${x}</h3>${altEl(am(i, k), ' r-alt-h')}`;
-        else if (blk.t === 'pre') html += `<pre class="r-pre" id="${id}">${m}${x}</pre>`;
-        else if (blk.t === 'c') html += `<p class="r-c" id="${id}">${m}${x}</p>${altEl(am(i, k), ' r-alt-c')}`;
-        else if (blk.t === 'toc') html += `<nav class="r-tocblock" id="${id}">${m}<ol>${toc.map((t, n) =>
-          (t.absent ? `<li class="lvl${t.level} absent"><button disabled><span>${esc(t.title)}</span><small>${esc(tr('absent'))}</small></button></li>`
-            : `<li class="lvl${t.level}"><button data-tk="${n}"><span>${esc(t.title)}</span><small data-tkp="${n}">${esc(tocPageText(n))}</small></button></li>`)).join('')}</ol></nav>`;
-        else { html += `<p id="${id}"${LIST_ITEM.test(blk.x) ? ' class="li"' : ''}>${m}${x}`; openP = true; if (par) altP = am(i, k); }
+        if (blk.t === 'h1') {
+          const [lab, ttl] = splitLabel(blk.x);
+          const inner = `${lab ? `<span class="r-num">${esc(lab)}</span>` : ''}${ttl ? `<span class="r-ttl">${esc(ttl)}</span>` : ''}`;
+          html += `<h2 class="r-h1${isPart(blk.x) ? ' r-part' : ''}" id="${id}">${m}${mark && mark.page === i && mark.block === k ? x : inner}</h2>${altEl(am(i, k), blk.x, ' r-alt-h1')}`;
+          prev = 'h'; return;
+        }
+        if (blk.t === 'h2') {
+          const front = i < firstBody;
+          html += `<h3 class="r-h2 ${front ? 'r-fh' : headLevel(blk.x, levels.get(`${i}-${k}`))}" id="${id}">${m}${x}</h3>${altEl(am(i, k), blk.x, ' r-alt-h')}`;
+          prev = 'h'; return;
+        }
+        if (blk.t === 'pre') { html += `<pre class="r-pre" id="${id}">${m}${x}</pre>`; prev = 'pre'; return; }
+        if (blk.t === 'toc') {
+          html += `<nav class="r-tocblock" id="${id}">${m}<ol>${toc.map((t, n) => {
+            const cls = `lvl${t.level}${t.level === 1 && isPart(t.title) ? ' part' : ''}`;
+            return t.absent ? `<li class="${cls} absent"><button disabled><span>${esc(t.title)}</span></button></li>`
+              : `<li class="${cls}"><button data-tk="${n}"><span>${esc(t.title)}</span><small data-tkp="${n}">${esc(tocPageText(n))}</small></button></li>`; }).join('')}</ol>`
+            + (absentTitles().length ? `<p class="r-absnote">${esc(tl === 'am' ? 'በግራጫ የተጻፉት በተቃኘው ቅጂ የሉም።' : 'Entries in grey are missing from the scanned copy.')}</p>` : '') + '</nav>';
+          prev = 'toc'; return;
+        }
+        const tp = i === 0 ? (k === 0 ? ' r-tp-title' : k === 1 ? ' r-tp-sub' : ' r-tp-line') + (k === bl.length - 1 ? ' r-tp-end' : '') : '';
+        if (blk.t === 'c') {
+          const cls = SRC_RE.test(blk.x.trim()) && blk.x.length < 220 ? 'r-src' : 'r-c';
+          html += `<p class="${cls}${tp}" id="${id}">${m}${x}</p>${altEl(am(i, k), blk.x, ' r-alt-c')}`;
+          prev = cls === 'r-src' ? 'src' : 'c';
+          if (i === 0 && k === bl.length - 1 && a === 0) html += note();
+          return;
+        }
+        const cls = classify(blk.x, prev);
+        const klass = { q: 'r-q', cm: 'r-cm', qt: 'r-qt', src: 'r-src', li: 'li' }[cls] || '';
+        const body = cls === 'q' || cls === 'cm' || (cls === 'li' && MARK.test(blk.x)) ? withMark(m + x) : m + x;
+        html += `<p id="${id}"${klass || tp ? ` class="${(klass + tp).trim()}"` : ''}>${body}`; openP = true; prev = cls || 'p';
+        if (par) { altP = am(i, k); altSrc = blk.x; }
+        if (i === 0 && k === bl.length - 1 && a === 0) { closeP(); html += note(); }
       });
     }
     closeP();
@@ -212,7 +284,7 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
   // ---------- scroll mode ----------
   let anchors = [];
   function renderScroll(mark) {
-    article.innerHTML = note() + flowHtml(0, pages.length, mark) + '<p class="r-end">❖ ❖ ❖</p>';
+    article.innerHTML = flowHtml(0, pages.length, mark) + endNote();
     anchors = [...article.querySelectorAll('.pm')];
   }
   function trackScroll() {
@@ -238,8 +310,16 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
   const segs = (() => {
     const chapters = toc.filter((t) => t.level === 1 && !t.absent).map((t) => ({ p: t.page, b: Math.max(0, t.b) }));
     const must = new Set(chapters.map((c) => `${c.p}:${c.b}`));
+    // a segment may start at a chapter or a main section (N.N, N.N.N); minor headings ("3)", "Summary", 3.7.2.1.1 …) only when
+    // a segment would otherwise grow very long
+    const lvl = new Map(toc.filter((t) => t.b >= 0).map((t) => [`${t.page}:${t.b}`, t.level]));
     const heads = [];
-    pages.forEach((pg, p) => pg.blocks.forEach((blk, b) => { if (blk.t === 'h1' || blk.t === 'h2' || must.has(`${p}:${b}`)) heads.push({ p, b }); }));
+    pages.forEach((pg, p) => pg.blocks.forEach((blk, b) => {
+      if (must.has(`${p}:${b}`) || blk.t === 'h1') { heads.push({ p, b, major: true }); return; }
+      if (blk.t !== 'h2') return;
+      const L = lvl.get(`${p}:${b}`) ?? ((/^(\d+(?:\.\d+)+)\s/.exec(blk.x) || [, ''])[1].split('.').length || 9);
+      heads.push({ p, b, major: L <= 3 });
+    }));
     chapters.forEach((c) => { if (!heads.some((h) => h.p === c.p && h.b === c.b)) heads.push(c); });
     heads.sort((x, y) => x.p - y.p || x.b - y.b);
     const out = [{ p: 0, b: 0 }];
@@ -248,7 +328,8 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
       if (h.p === last.p && h.b === last.b) return;
       const nextMust = heads.slice(n + 1).find((x) => must.has(`${x.p}:${x.b}`));
       const room = (nextMust ? nextMust.p : pages.length) - h.p;
-      if (must.has(`${h.p}:${h.b}`) || (h.p - last.p >= SEG_PAGES && room >= 3)) out.push(h);
+      const len = h.p - last.p;
+      if (must.has(`${h.p}:${h.b}`) || (room >= 3 && ((h.major && len >= SEG_PAGES) || len >= 3 * SEG_PAGES))) out.push(h);
     });
     if (out.length < 2) for (let p = 12; p < pages.length; p += 12) out.push({ p, b: 0 });
     return out;
@@ -258,7 +339,7 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
   const segOfId = (id) => { const m = /^b-(\d+)-(\d+)$/.exec(id || ''); return m ? segOfBlock(Number(m[1]), Number(m[2])) : null; };
   const chapterHtml = (k, mark) => {
     const a = segs[k], e = segs[k + 1];
-    return (k === 0 ? note() : '') + flowHtml(a.p, e ? e.p : pages.length, mark, a.b, e ? e.b : 0) + (e ? '' : '<p class="r-end">❖ ❖ ❖</p>');
+    return flowHtml(a.p, e ? e.p : pages.length, mark, a.b, e ? e.b : 0) + (e ? '' : endNote());
   };
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
   let chap = -1, col = 0, ncols = 1, perView = 1, step = 1, padX = 22, chapHtml = '', ghostOk = false, turnAnim = null;
@@ -271,7 +352,8 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
     Object.assign(target.style, { height: `${h}px`, width: `${w}px`, padding: `0 ${padX}px`, columnWidth: `${colW}px`, columnGap: `${2 * padX}px` });
     sheet.classList.toggle('spread', perView === 2);
   }
-  const colOf = (node) => Math.max(0, Math.floor((node.offsetLeft - padX + 2) / step));
+  // the column a node is in, measured from rectangles (offsetLeft is relative to a table cell inside tables)
+  const colOf = (node, box = cols) => Math.max(0, Math.floor((node.getBoundingClientRect().left - box.getBoundingClientRect().left - padX + 2) / step));
   const countCols = (box) => Math.max(1, Math.round(box.scrollWidth / step));
   function renderChapter(k, mark) {
     chap = k; chapHtml = chapterHtml(k, mark); cols.innerHTML = chapHtml; ghostOk = false; metrics(); ncols = countCols(cols);
@@ -352,7 +434,7 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
           toc.forEach((t, n) => {
             if (t.absent) return;
             const kk = t.b >= 0 ? segOfBlock(t.page, t.b) : segOfPage(t.page);
-            if (kk === k) { const node = box.querySelector(`#${CSS.escape(targetId(t))}`); tocCol[n] = [k, node ? colOf(node) : 0]; }
+            if (kk === k) { const node = box.querySelector(`#${CSS.escape(targetId(t))}`); tocCol[n] = [k, node ? colOf(node, box) : 0]; }
           });
           k++;
         } while (k < segs.length && deadline.timeRemaining() > 6);

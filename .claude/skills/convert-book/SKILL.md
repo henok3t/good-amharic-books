@@ -134,6 +134,15 @@ The flags are hints: in Amharic the last letter's vowel is often grammar (ክር
 - Local preview: `npm run dev` (serves `data/` without sign-in) — open `#/read/<id>`, turn pages in book mode on a phone-sized and a
   desktop window, open the contents, search a word, open an original page. A Playwright script with `devices['iPhone 13']` works well.
 
+## 7b. Book-standard formatting
+
+`python3 scripts/apply_format.py <id>` applies `data/corrections/<id>-format.json` (block types, table rows, contents fixes, the
+Amharic author name) plus generic typography to the Amharic text and the English translation: curly quotes, "…", en dashes,
+a no-break space before ። ፣ ፤ ፥ (Amharic punctuation never starts a line), no full stops after headings, plain footnote numbers
+turned into superscript calls (logged in `<id>-calls.log`). **Run it again after every rebuild or re-assembly** (idempotent).
+For a new book, have two helpers review the rendered PDF and the online reader against standard book conventions
+(Chicago Manual of Style / good e-readers) and write `B. data issues` into the format file.
+
 ## 8. Scan images, PDFs, catalog
 
 ```bash
