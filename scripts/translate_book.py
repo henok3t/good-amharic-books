@@ -24,7 +24,7 @@ import json, os, re, sys, shutil, hashlib
 from collections import Counter
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-STAGES = ['tr', 'mean', 'scr', 'read', 'theo']
+STAGES = ['tr', 'mean', 'scr', 'read', 'theo', 'cons']   # cons: whole-book consistency pass (split from consistency.txt)
 ETH = re.compile(r'[ሀ-፿]')
 UNIT_RE = re.compile(r'^\[(\d+-\d+)\]\s*$', re.M)
 
@@ -224,7 +224,7 @@ def cmd_assemble(book_id, work):
     eng = {}
     for n in range(len(U['meta']['parts'])):
         e, last = current(work, n)
-        if last != 'theo': print(f'warning: part {n:02d} is only at stage {last}')
+        if last not in ('theo', 'cons'): print(f'warning: part {n:02d} is only at stage {last}')
         eng.update(e)
     by_unit = {u['id']: u for u in U['units']}
     toc_en = json.load(open(os.path.join(work, 'toc_en.json')))
@@ -251,6 +251,22 @@ def cmd_assemble(book_id, work):
     print(f'wrote data/text/{book_id}.en.json: {len(pages)} pages, {words} words, {missing} units without English')
 
 
+def cmd_split_cons(work):
+    """Split the consistency editor's single file into per-part 'cons' stage files."""
+    _, U = load(work)
+    found = parse_units(os.path.join(work, 'consistency.txt'))
+    page_part = {}
+    for n, (a, b) in enumerate(U['meta']['parts']):
+        for p in range(a, b): page_part[p] = n
+    per = {}
+    for uid, v in found.items(): per.setdefault(page_part[int(uid.split('-')[0])], []).append((uid, v))
+    for n in range(len(U['meta']['parts'])):
+        items = per.get(n, [])
+        with open(os.path.join(work, 'parts', f'{n:02d}.cons.txt'), 'w') as f:
+            f.write('\n'.join(f'[{uid}]\n{v["x"]}\nWHY: {v["why"]}\n' for uid, v in items) or 'NO CHANGES\n')
+    print(f'{len(found)} consistency edits over', ' '.join(f'{n:02d}:{len(per.get(n, []))}' for n in range(len(U['meta']['parts']))))
+
+
 if __name__ == '__main__':
     c = sys.argv[1]
     if c == 'init': cmd_init(int(sys.argv[2]), sys.argv[3])
@@ -258,3 +274,4 @@ if __name__ == '__main__':
     elif c == 'status': cmd_status(sys.argv[2])
     elif c == 'check': cmd_check(sys.argv[2], int(sys.argv[3]) if len(sys.argv) > 3 else None)
     elif c == 'assemble': cmd_assemble(int(sys.argv[2]), sys.argv[3])
+    elif c == 'split-cons': cmd_split_cons(sys.argv[2])
