@@ -113,6 +113,8 @@ def cmd_init(book_id, work):
 def parse_units(path):
     if not os.path.exists(path): return {}
     s = open(path).read()
+    nm = re.search(r'^NOTES:', s, re.M)                  # the agent's notes at the end are not part of the last unit
+    if nm: s = s[:nm.start()]
     marks = list(UNIT_RE.finditer(s)); out = {}
     for n, m in enumerate(marks):
         body = s[m.end(): marks[n + 1].start() if n + 1 < len(marks) else len(s)].strip()
@@ -153,7 +155,7 @@ def checks(units, eng, prev=None):
         if u['t'] == 'p' and re.fullmatch(r'\(.*\)', u['x'].strip(), re.S) and len(re.findall(r'[A-Za-z]', u['x'])) > 20 and e == '':
             continue                                    # English original of the quotation above, used in its translation
         if not e.strip(): flags.append(f'[{u["id"]}] EMPTY English'); continue
-        if ETH.search(e): flags.append(f'[{u["id"]}] ETHIOPIC SCRIPT in English (only Ge'ez quotations may stay): {"".join(ETH.findall(e))[:30]}')
+        if ETH.search(e): flags.append(f'[{u["id"]}] ETHIOPIC SCRIPT in English (only Geez quotations may stay): {"".join(ETH.findall(e))[:30]}')
         am_nums = Counter(NUM.findall(u['x'])); en_nums = Counter(NUM.findall(e))
         lost = [n for n in am_nums if en_nums[n] < am_nums[n]]
         if lost: flags.append(f'[{u["id"]}] NUMBERS not in English: {" ".join(lost[:8])}')
