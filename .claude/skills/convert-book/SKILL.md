@@ -162,6 +162,12 @@ Say what is live and how to see it (reload; the Reading tab lists readable books
 entries became headings, uncertain readings with page numbers (from the notes), anything not done, and the cost. If you could not
 open the live site yourself, say so.
 
+## English translation
+
+To translate a finished book into English (reader language switch, English PDF), follow `references/translation.md`: a
+glossary agent, then translator → meaning → Scripture & sources → readability → theology agents per part, a whole-book
+consistency pass, `scripts/translate_book.py` to split, check and assemble.
+
 ## When things go wrong
 
 See `references/lessons.md` for the problems met so far and their fixes (HTTP-only old site, tilted scans, misread chapter numbers,
