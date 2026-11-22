@@ -79,6 +79,23 @@ Problems met so far, why they happen, and what fixes them. Read this when someth
   in a 3-swipe trace at 4x CPU slowdown, 20-30 fps) versus 60 fps with the animation.
 - Swipes must work when they start on a button (the contents list); suppress the click after a drag.
 
+## Per-book layout options (ሕይወተ ወራዙት, 1427)
+`data/corrections/<id>-layout.json` switches on builder rules a book needs; all are off by default so finished books rebuild
+byte-identically (check with `cmp` after any builder change: books 1011 and 1289 each lost 30-120 corrections to one
+"harmless" rule change). Options:
+- `wide_first_indent`: first lines indented ~8%; without it the second line looked like a hanging-indent "outdent" and every
+  paragraph was split after its first line (median paragraph 71 chars instead of ~200). Also starts a paragraph at an
+  indented line after a short line that ends without punctuation (e.g. a Bible reference "ዮሐ16፥21").
+- `foot_numbers`: a running header without a number (alternating "<title>" / "<subtitle>") and the page number at the foot.
+- `chapter_not_full_line`: a full-width line that starts "ምዕራፍ …" is a sentence (an introduction summarising chapters), not a heading.
+- `deskew`: levels tilted scans before lines are grouped, each half of a spread on its own (slopes up to 0.05 in 1427 made
+  neighbouring rows merge and scrambled whole pages). Measure first: median slope per half from first/last word centres.
+- `drop_pages`: ["<file>:<pdf page>"]: a spread scanned twice, at the end of one file and the start of the next (look for
+  near-identical page texts across file boundaries).
+- `contents_pages`: ["<file>:<pdf page>:<L|R|F>"] when the contents isn't recognised (page ranges "14-16", "ማውጫ" merged
+  with the column header).
+The layout file is read at the start of `main`; options read later silently do nothing.
+
 ## Privacy and safety
 - The repo is public: no book text, catalog data or corrections in git (`data/` is ignored), no email addresses anywhere.
   Storage rules list Firebase UIDs; a privacy check blocks commands that write an email address into files.

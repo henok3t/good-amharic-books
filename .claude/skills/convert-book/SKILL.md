@@ -66,6 +66,9 @@ pages, page labels smoothed into a sequence. Check:
 - block counts in the output line (hundreds of `h2` = headings over-detected; very short paragraphs = paragraphs over-split);
 - `python3 -c` over `data/text/<id>.json`: all `h1` texts, paragraph length median (~150-250 chars is normal), page labels;
 - open 3-4 pages next to their scans. If a pattern is wrong on many pages, fix the builder (generic rule), not the pages.
+  A rule that only this book needs goes behind an option in `data/corrections/<id>-layout.json` (wide first-line indents,
+  page numbers at the foot, tilted scans, duplicated spreads, contents pages: see `references/lessons.md`), so finished
+  books keep rebuilding identically.
 
 ## 4. Contents
 

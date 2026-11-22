@@ -67,15 +67,40 @@ def glue(a_text, b_text):
     return a_text + ' ' + b_text
 
 # ---------- OCR geometry ----------
+def page_slopes(page_obj):
+    """Median slope (dy/dx) of the text lines on each half of a page, from the centres of their first and last words."""
+    def centre(w):
+        v = w['boundingBox']['normalizedVertices']
+        return sum(p.get('x', 0) for p in v) / 4, sum(p.get('y', 0) for p in v) / 4
+    sl = {0: [], 1: []}
+    for blk in page_obj['blocks']:
+        for par in blk['paragraphs']:
+            line = []
+            for w in par['words']:
+                line.append(w)
+                if w['symbols'][-1].get('property', {}).get('detectedBreak', {}).get('type') in ('EOL_SURE_SPACE', 'LINE_BREAK', 'HYPHEN'):
+                    if len(line) >= 4:
+                        (x0, y0), (x1, y1) = centre(line[0]), centre(line[-1])
+                        if x1 - x0 > 0.15: sl[int((x0 + x1) / 2 >= 0.5)].append((y1 - y0) / (x1 - x0))
+                    line = []
+    return {k: statistics.median(v) if len(v) >= 3 else 0.0 for k, v in sl.items()}
+
 def vision_lines(page_obj):
-    """All text lines on a Vision page: [{x, x0, y0, x1, y1, h, conf}] (coordinates normalised 0..1)."""
+    """All text lines on a Vision page: [{x, x0, y0, x1, y1, h, conf}] (coordinates normalised 0..1).
+    With the "deskew" layout option, tilted scans are levelled first (each half of a spread on its own)."""
     lines = []
+    slopes = page_slopes(page_obj) if LAYOUT.get('deskew') else None
+    def level(xs, ys):
+        if not slopes: return ys
+        cx = sum(xs) / len(xs); side = int(cx >= 0.5); s = slopes[side]
+        if abs(s) < 0.004: return ys
+        return [y - s * (cx - (0.25 if side == 0 else 0.75)) for y in ys]
     for blk in page_obj['blocks']:
         for par in blk['paragraphs']:
             cur, box, confs = '', None, []
             for w in par['words']:
                 v = w['boundingBox']['normalizedVertices']
-                xs = [p.get('x', 0) for p in v]; ys = [p.get('y', 0) for p in v]
+                xs = [p.get('x', 0) for p in v]; ys = level(xs, [p.get('y', 0) for p in v])
                 wb = (min(xs), min(ys), max(xs), max(ys))
                 box = wb if box is None else (min(box[0], wb[0]), min(box[1], wb[1]), max(box[2], wb[2]), max(box[3], wb[3]))
                 confs.append(w.get('confidence', 0))
@@ -128,6 +153,7 @@ def split_halves(lines, landscape):
 HEADERS = set()
 HEADER_TEXT = ''          # set when most pages share one running header (fuzzy, OCR varies)
 FOOTNOTES = False         # set when many pages end with numbered footnotes
+LAYOUT = {}               # per-book layout options from data/corrections/<id>-layout.json (see main)
 def norm_header(t): return re.sub(r'[\d\s' + ETH_NUM + r'.\-–—]', '', t)
 
 def is_page_number(t):
@@ -173,7 +199,8 @@ def layout_page(lines):
     body = []
     for l in lines:
         near_edge = l['y0'] - top < 0.04 or bottom - l['y1'] < 0.04
-        if is_page_number(l['x']) and near_edge and not HEADER_TEXT: label = l['x'].strip(' -–—.'); continue
+        foot_num = LAYOUT.get('foot_numbers') and HEADER_TEXT and label is None and bottom - l['y1'] < 0.04   # number at the foot
+        if is_page_number(l['x']) and near_edge and (not HEADER_TEXT or foot_num): label = l['x'].strip(' -–—.'); continue
         if len(l['x'].strip(' .,-·\'"')) <= 1 and not l['x'].strip().isdigit(): continue      # specks
         body.append(l)
     if not body: return label, []
@@ -213,7 +240,8 @@ def layout_page(lines):
         tall = l['h'] > H * 1.28
         prev_ended = prev is None or prev['end']
         heading = (centered or tall) and len(text) < 75 and not text.endswith(('።', '፣', '፤', '፥')) and prev_ended
-        if CHAPTER_RE.match(text) and len(text) < 70 and (text.startswith('ምዕራፍ') or prev_ended):
+        full_line = LAYOUT.get('chapter_not_full_line') and right_gap < 0.04 and len(text) > 30   # a sentence starting "ምዕራፍ …"
+        if CHAPTER_RE.match(text) and len(text) < 70 and not full_line and (text.startswith('ምዕራፍ') or prev_ended):
             flush(); blocks.append({'t': 'h1', 'x': text}); prev = {'end': True, 'head': True}; continue
         if heading:
             flush()
@@ -226,17 +254,19 @@ def layout_page(lines):
         bullet = bool(re.match(r'^([ሀ-ፐ]|\d{1,2}|[a-z])[.)/]\s|^[—–•-]\s?', text))
         prev_punct = bool(prev and prev.get('punct'))
         term = bool(re.match(r'^\S.{1,40}?\s[—–]\s', text))       # "term — definition"
-        outdent = bool(prev and prev.get('indent', 0) - indent > 0.05)  # back at the margin after hanging lines
+        outdent = bool(prev and prev.get('indent', 0) - indent > 0.05     # back at the margin after hanging lines
+                       and not (LAYOUT.get('wide_first_indent') and prev.get('start')))   # not after an indented first line
         new_para = (para is None or bullet or term or outdent or (prev and prev.get('head'))
                     or (indent > 0.035 and prev_punct)            # indented first line after a finished sentence
-                    or (prev and prev.get('short') and prev_punct)) # previous line ended early with a full stop
+                    or (prev and prev.get('short') and prev_punct)  # previous line ended early with a full stop
+                    or (LAYOUT.get('wide_first_indent') and indent > 0.05 and prev and prev.get('short')))
         if new_para:
             flush(); para = text
         else:
             para = glue(para, text)                              # includes hanging-indent continuation lines
         short = right_gap > 0.12
         punct = text.endswith(END_PUNCT + ('።', ':', '"', '.'))
-        prev = {'end': short and punct, 'short': short, 'punct': punct, 'head': False, 'indent': indent}
+        prev = {'end': short and punct, 'short': short, 'punct': punct, 'head': False, 'indent': indent, 'start': bool(new_para)}
     flush()
     for b in blocks: b['x'] = norm_quotes(b['x'])
     return label, blocks + [{'t': 'fn', 'x': n} for n in notes]
@@ -457,6 +487,9 @@ def use_clean_contents(pages, toc, book_id, first_body):
 def main(book_id, ocr_dir):
     cat = json.load(open(os.path.join(ROOT, 'data/catalog.json')))
     book = next(b for b in cat['books'] if b['id'] == book_id)
+    lay = os.path.join(ROOT, f'data/corrections/{book_id}-layout.json')   # per-book layout options, all off by default:
+    if os.path.exists(lay): LAYOUT.update(json.load(open(lay)))           # wide_first_indent, foot_numbers, chapter_not_full_line,
+                                                                          # deskew, drop_pages ["<file>:<pdf page>", …]
     raw = []
     for part in book['parts']:
         if not part.get('file'): continue
@@ -470,6 +503,8 @@ def main(book_id, ocr_dir):
             vp = fta['pages'][0]
             landscape = vp['width'] > vp['height'] * 1.1
             for hi, half in enumerate(split_halves(vision_lines(vp), landscape)):
+                key = f"{part['file']}:{r['context']['pageNumber']}"
+                if key in LAYOUT.get('drop_pages', []): continue      # e.g. a spread scanned twice, at the end of one file and the start of the next
                 if half: raw.append((half, {'file': part['file'], 'page': r['context']['pageNumber'], 'half': ['L', 'R'][hi] if landscape else 'F'}))
     for half, _ in raw:                                  # lexicon from words that sit inside lines
         for l in half:
@@ -492,7 +527,10 @@ def main(book_id, ocr_dir):
     fix_labels(pages)
 
     # contents pages -> parsed contents list
-    cidx = [i for i, p in enumerate(pages[:20]) if is_contents_page(p)]
+    if LAYOUT.get('contents_pages'):                     # named in the layout file: ["<file>:<pdf page>:<L|R|F>", …]
+        cidx = [i for i, p in enumerate(pages) if f"{p['src']['file']}:{p['src']['page']}:{p['src']['half']}" in LAYOUT['contents_pages']]
+    else:
+        cidx = [i for i, p in enumerate(pages[:20]) if is_contents_page(p)]
     if cidx: cidx = list(range(cidx[0], cidx[-1] + 1))
     printed = parse_printed_contents(pages, cidx) if cidx else []
     first_body = (cidx[-1] + 1) if cidx else 0
