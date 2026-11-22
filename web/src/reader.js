@@ -86,7 +86,7 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
     if (COMMENT.test(s)) return 'cm';
     if (SRC_RE.test(s) && s.length < 220 && ['q', 'qt', 'src', 'c'].includes(prev)) return 'src';
     if (/^[“"]/.test(s) && /[”"]\s*(\([^)]*\))?\s*[።.]?$/.test(s) && s.length > 60) return 'qt';
-    if (LIST_RE.test(s)) return 'li';
+    if (LIST_RE.test(s) && s.length <= 200) return /^\d{1,2}[.)]/.test(s) ? 'li num' : 'li';   // long points read as paragraphs
     return '';
   }
   function headLevel(x, lvl) {                            // the heading level: from the contents entry, else from its numbering
@@ -174,15 +174,16 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
         }
         const tp = i === 0 ? (k === 0 ? ' r-tp-title' : k === 1 ? ' r-tp-sub' : ' r-tp-line') + (k === bl.length - 1 ? ' r-tp-end' : '') : '';
         if (blk.t === 'c') {
-          const cls = SRC_RE.test(blk.x.trim()) && blk.x.length < 220 ? 'r-src' : 'r-c';
+          const cls = SRC_RE.test(blk.x.trim()) && blk.x.length < 220 && i !== 0 && prev !== 'h' ? 'r-src'
+            : (['p', 'li', 'li num'].includes(prev) && blk.x.length < 40 && (k === bl.length - 1 || bl[k + 1].t === 'h1')) ? 'r-c r-sig' : 'r-c';
           html += `<p class="${cls}${tp}" id="${id}">${m}${x}</p>${altEl(am(i, k), blk.x, ' r-alt-c')}`;
           prev = cls === 'r-src' ? 'src' : 'c';
           if (i === 0 && k === bl.length - 1 && a === 0) html += note();
           return;
         }
         const cls = classify(blk.x, prev);
-        const klass = { q: 'r-q', cm: 'r-cm', qt: 'r-qt', src: 'r-src', li: 'li' }[cls] || '';
-        const body = cls === 'q' || cls === 'cm' || (cls === 'li' && MARK.test(blk.x)) ? withMark(m + x) : m + x;
+        const klass = { q: 'r-q', cm: 'r-cm', qt: 'r-qt', src: 'r-src', li: 'li', 'li num': 'li num' }[cls] || '';
+        const body = cls === 'q' || cls === 'cm' || (cls.startsWith('li') && MARK.test(blk.x)) ? withMark(m + x) : m + x;
         html += `<p id="${id}"${klass || tp ? ` class="${(klass + tp).trim()}"` : ''}>${body}`; openP = true; prev = cls || 'p';
         if (par) { altP = am(i, k); altSrc = blk.x; }
         if (i === 0 && k === bl.length - 1 && a === 0) { closeP(); html += note(); }
@@ -195,7 +196,7 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
   root.innerHTML = `<div class="reader" data-theme="${prefs.theme}">
     <header class="r-top">
       <button class="r-icon" data-act="exit" aria-label="${esc(tr('back'))}">←</button>
-      <div class="r-title"><b></b><small>${esc(book.author || '')}</small></div>
+      <div class="r-title"><b></b><small>${esc((tl === 'am' && (text.authorAm || book.authorAm)) || book.author || '')}</small></div>
       ${loadEn ? `<button class="r-icon r-lang" data-act="lang" aria-label="${esc(tr('switchLang'))}" title="${esc(tr('switchLang'))}"></button>` : ''}
       <button class="r-icon" data-act="toc" aria-label="${esc(tr('contents'))}">☰</button>
       <button class="r-icon" data-act="search" aria-label="${esc(tr('search'))}">⌕</button>
@@ -260,7 +261,7 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
   function updatePos() {
     range.value = current;
     if (prefs.mode === 'book' && layout.total) {
-      const n = layout.offset[chap] + col + 1, last = Math.min(n + perView - 1, layout.total);
+      const n = layout.offset[chap] + col + 1, last = Math.min(n + perView - 1, layout.offset[chap + 1] ?? layout.total);
       pos.textContent = `${tr('page')} ${n}${last > n ? `–${last}` : ''} / ${layout.total}`;
     } else pos.textContent = `${pct(current)}%`;
     const bms = local.get(bmKey, []);
@@ -308,16 +309,18 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
   // enough to lay out quickly on a phone. A segment always starts on a new page.
   const SEG_PAGES = 9;                                     // printed pages per segment before a section heading may start a new one
   const segs = (() => {
-    const chapters = toc.filter((t) => t.level === 1 && !t.absent).map((t) => ({ p: t.page, b: Math.max(0, t.b) }));
+    const back = (p, b) => { while (b > 0 && pages[p].blocks[b - 1].t === 'c') b--; return b; };   // "በስመ አብ …" over a heading
+    const chapters = toc.filter((t) => t.level === 1 && !t.absent).map((t) => ({ p: t.page, b: back(t.page, Math.max(0, t.b)) }));
     const must = new Set(chapters.map((c) => `${c.p}:${c.b}`));
     // a segment may start at a chapter or a main section (N.N, N.N.N); minor headings ("3)", "Summary", 3.7.2.1.1 …) only when
     // a segment would otherwise grow very long
     const lvl = new Map(toc.filter((t) => t.b >= 0).map((t) => [`${t.page}:${t.b}`, t.level]));
     const heads = [];
     pages.forEach((pg, p) => pg.blocks.forEach((blk, b) => {
-      if (must.has(`${p}:${b}`) || blk.t === 'h1') { heads.push({ p, b, major: true }); return; }
+      if (blk.t === 'h1') { heads.push({ p, b: back(p, b), major: true }); return; }
+      if (must.has(`${p}:${b}`)) { heads.push({ p, b, major: true }); return; }
       if (blk.t !== 'h2') return;
-      const L = lvl.get(`${p}:${b}`) ?? ((/^(\d+(?:\.\d+)+)\s/.exec(blk.x) || [, ''])[1].split('.').length || 9);
+      const L = lvl.get(`${p}:${b}`) ?? (((m) => (m ? m[1].split('.').length : 9))(/^(\d+(?:\.\d+)+)\s/.exec(blk.x)));   // unnumbered: minor
       heads.push({ p, b, major: L <= 3 });
     }));
     chapters.forEach((c) => { if (!heads.some((h) => h.p === c.p && h.b === c.b)) heads.push(c); });
@@ -552,7 +555,7 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
 
   function renderToc() {
     const bms = local.get(bmKey, []);
-    const activeIdx = toc.reduce((a, t, k) => (t.page <= current ? k : a), 0);
+    const activeIdx = toc.reduce((a, t, k) => (t.page <= current ? k : a), -1);
     panelEl.innerHTML = `${panelHead(tr('contents'))}
       <ol class="rp-toc">${toc.map((t, k) => t.absent
         ? `<li class="lvl${t.level} absent"><button disabled><span>${esc(t.title)}</span><small>${esc(tr('absent'))}</small></button></li>`
@@ -651,7 +654,7 @@ export function openReader(root, { book, text, lang, scanUrl, offline, pdf, onEx
         <button class="btn" data-open-scan="${i}">↗ ${esc(tr('openImage'))}</button>
         ${i < pages.length - 1 ? `<button class="btn" data-orig-go="${i + 1}">›</button>` : ''}</div>`;
     scanUrl(src.file, src.page).then((url) => {
-      const box = panelEl.querySelector('.rp-scan'); if (box) box.innerHTML = `<img src="${url}" alt="">`;
+      const box = panelEl.querySelector('.rp-scan'); if (box) { box.innerHTML = `<img src="${url}" alt="">`; box.querySelector('img').onerror = () => { box.innerHTML = '<p class="rp-empty">—</p>'; }; }
     }).catch(() => { const box = panelEl.querySelector('.rp-scan'); if (box) box.innerHTML = '<p class="rp-empty">—</p>'; });
   }
 

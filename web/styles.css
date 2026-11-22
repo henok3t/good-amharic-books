@@ -433,3 +433,8 @@ html[lang="am"] .reading h1 { font-family: var(--ethi); }
 .reader[data-tl="both"] .r-text p:not(.r-alt) + .r-alt { margin-top: .1em; }
 .reader[data-tl="both"] .r-alt { margin-bottom: 1em; }
 .r-alt, [lang="am"] { hyphens: manual; -webkit-hyphens: manual; }
+
+/* signatures, numbered lists, Ethiopic has no italic */
+.r-text p.r-sig { text-align: right; margin-top: .6em; padding-right: .5em; }
+.r-text p.li.num { padding-left: 1.9em; text-indent: -1.9em; font-variant-numeric: tabular-nums; }
+[lang="am"] .r-tp-sub, [lang="am"] .r-h2.l4 { font-style: normal; }

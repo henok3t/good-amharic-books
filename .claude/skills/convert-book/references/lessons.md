@@ -96,6 +96,20 @@ byte-identically (check with `cmp` after any builder change: books 1011 and 1289
   with the column header).
 The layout file is read at the start of `main`; options read later silently do nothing.
 
+## Lessons from ሕይወተ ወራዙት (1427)
+- **Contents vs body headings**: the printed contents had misprints and abbreviations (ሕልም for ሕልመ, ዓይቶች, a dropped በ,
+  shortened titles). `headings_from_body` in the layout file keeps each numbered section heading as printed in the body
+  (the differences are logged to `<id>-headings.log.json`); the contents still decides where sections are.
+- **A chapter named like its first section** (ምዕራፍ አንድ / 1.1 የሕይወት አጀማመር): the x.1 entry links to the chapter heading
+  (the builder keeps a "claimed" set), and the PDF and reader share one anchor for both entries.
+- **The printed contents' last pages can be wrong by several pages** (chapter 11 at 272 in the contents, 268 in the body):
+  check the last chapters' opening pages against the scans.
+- **Book-wide fixes go in `<id>.extra.json` as `sub` ops and run in list order**: merge scan corrections, then extra, then the
+  language corrections (the language reviewers saw text after the book-wide fixes). Here: ‹‹ ›› and lone ‹ › → « », ÷ → ፥.
+- **Formatting reviewers** found real problems both times: stranded invocation/signature lines, contents entries without page
+  numbers, a bibliography hang too narrow for two-digit numbers, long lettered points set with a hanging indent, spread labels
+  counting a page twice, unnumbered headings treated as main sections (forced page breaks). Keep this step.
+
 ## Privacy and safety
 - The repo is public: no book text, catalog data or corrections in git (`data/` is ignored), no email addresses anywhere.
   Storage rules list Firebase UIDs; a privacy check blocks commands that write an email address into files.
