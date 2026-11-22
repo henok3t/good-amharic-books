@@ -153,6 +153,7 @@ def split_halves(lines, landscape):
 HEADERS = set()
 HEADER_TEXT = ''          # set when most pages share one running header (fuzzy, OCR varies)
 FOOTNOTES = False         # set when many pages end with numbered footnotes
+HEAD_DIFFS = []           # (num, contents wording, body wording) with headings_from_body
 LAYOUT = {}               # per-book layout options from data/corrections/<id>-layout.json (see main)
 def norm_header(t): return re.sub(r'[\d\s' + ETH_NUM + r'.\-–—]', '', t)
 
@@ -453,6 +454,11 @@ def use_clean_contents(pages, toc, book_id, first_body):
             else:
                 al = fuzz.partial_ratio_alignment(want, fold(b['x']))
                 if b['t'] == 'h2' or len(fold(b['x'])) <= len(want) + 12:
+                    if LAYOUT.get('headings_from_body') and e.get('num'):     # keep the wording printed at the heading
+                        body = re.sub(r'^[\d.\s]+(?=\S)', '', b['x']).strip()
+                        if body and fuzz.ratio(want, fold(body)) >= 70:
+                            if body != e['title']: HEAD_DIFFS.append((e['num'], e['title'], body))
+                            title = e['num'] + ' ' + body
                     b['t'] = 'h2'; b['x'] = title
                 elif al and al.dest_start <= 3:                    # title runs into the paragraph: split it off
                     folded, cut, n = b['x'], 0, 0
@@ -617,6 +623,8 @@ def main(book_id, ocr_dir):
         k = next((k for k, b in enumerate(bl) if b is blk), None) if blk is not None else None
         if k is None: k = next((k for k, b in enumerate(bl) if b['x'] == t['title']), None)
         if k is not None: t['b'] = k
+    if HEAD_DIFFS:
+        json.dump(HEAD_DIFFS, open(os.path.join(ROOT, f'data/corrections/{book_id}-headings.log.json'), 'w'), ensure_ascii=False, indent=0)
     out = {'id': book_id, 'titleAm': book['titleAm'], 'titleEn': book['titleEn'], 'author': book['author'], 'engine': 'cloud-vision',
            'pages': pages, 'toc': toc}
     os.makedirs(os.path.join(ROOT, 'data/text'), exist_ok=True)

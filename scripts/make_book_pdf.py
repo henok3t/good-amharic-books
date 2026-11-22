@@ -150,8 +150,11 @@ def build_html(book, text, cover):
                f'<div class="en">{esc(other)}</div><div class="author">{esc(author)}</div></section>')
     out.append(f'<section class="halftitle">{esc(title)}</section>')
     own_title = [b['x'] for b in pages[0]['blocks'] if b['x'].strip()] if first_body > 1 else []
-    imprint = ''.join(f'<div>{esc(x)}</div>' for x in own_title[2:])     # "Prepared by …", date, place
+    sub_am = '' if en else text.get('subtitleAm', '')                     # e.g. "(የወጣቶች ሕይወት) · ክፍል አንድ"
+    skip = [x.strip(' ()·') for x in sub_am.split('·') if x.strip(' ()·')] + ([author] if author else [])
+    imprint = ''.join(f'<div>{esc(x)}</div>' for x in own_title[2:] if not any(k and k in x for k in skip))   # date, place
     out.append(f'<section class="titlepage"><h1>{esc(title)}</h1>'
+               + (f'<div class="sub">{esc(sub_am)}</div>' if sub_am else '') +
                f'<div class="sub">{esc(text.get("subtitleEn") if en and text.get("subtitleEn") else other)}</div>'
                f'<div class="author">{esc(author)}</div><div class="imprint">{imprint}</div></section>')
     notes_ed = ([text.get('translatorNote', ''), 'English translation of the scanned Amharic edition; its pages do not follow the printed edition.']

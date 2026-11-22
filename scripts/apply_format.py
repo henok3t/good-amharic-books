@@ -99,7 +99,7 @@ def main(book_id):
         for op in fmt.get('toc', []):                      # entries are matched by section number, so re-runs are safe
             hits = [t for t in toc if t['title'].startswith(op['num'] + ' ')]
             for t in hits:
-                for key in ('page', 'b', 'level'):
+                for key in ('page', 'b', 'level', 'title'):
                     if key in op: t[key] = op[key]
         for t in toc:
             t['title'] = curly(t['title']) if ('"' in t['title'] or "'" in t['title']) else t['title']
