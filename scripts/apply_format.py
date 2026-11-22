@@ -34,6 +34,7 @@ def typography(x, lang, t):
     if lang == 'am':
         x = re.sub(r'[  ]+([።፣፤፥፦፧፨])', NB + r'\1', x)         # Ethiopic punctuation never starts a line
         x = re.sub(r'(\d)[\s  ]*፥[\s  ]*(\d)', r'\1' + NNB + '፥' + NNB + r'\2', x)
+        x = re.sub(r'([።፣፤፥፦!?])[ \u00a0]+»', r'\1»', x)            # a closing » never starts a line
     if t in ('h1', 'h2'): x = re.sub(r'[\s ]*[;.።፣፤]+$', '', x)
     return x
 

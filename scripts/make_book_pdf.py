@@ -21,6 +21,7 @@ CSS = """
 @page :blank { @top-center { content: none; } @bottom-center { content: none; } }
 @page cover { margin: 0; @top-center { content: none; } @bottom-center { content: none; } }
 @page front { @top-center { content: none; } @bottom-center { content: counter(page, lower-roman); } }
+@page front:blank { @top-center { content: none; } @bottom-center { content: none; } }
 @page fronttitle { @top-center { content: none; } @bottom-center { content: none; } }
 @page :nth(1 of body) { counter-reset: page 1; }
 html { font-family: 'Noto Serif Ethiopic', 'Noto Serif', serif; font-size: 10.6pt; line-height: 1.72; color: #1d1b18; }
@@ -79,6 +80,13 @@ p.cm { padding-left: 4.2mm; text-indent: -4.2mm; }
 p.bq + p.bq, p.qt + p.qt { margin-top: 0; }
 p.src { text-align: right; text-indent: 0; font-size: 8.8pt; margin: -1mm 0 2.4mm; hyphens: manual; color: #333; }
 h2.chapter + p, h3 + p, .label + p, h2.front + p { text-indent: 0; }
+h2.chapter + p.li, h3 + p.li, h2.front + p.li { text-indent: -1.2em; }
+p.bib, h2.chapter + p.bib { text-align: left; padding-left: 2em; text-indent: -2em; margin-bottom: 1.2mm; }
+p.invoc { break-before: right; break-after: avoid; padding-top: 10mm; margin: 0; }
+p.invoc + h2.chapter { break-before: auto; padding-top: 5mm; }
+p.sig { text-align: right; break-before: avoid; margin-top: 1.5mm; padding-right: 4mm; }
+h2.chapter, .parttitle h2 { bookmark-label: attr(data-bm); }
+html[lang=am] .label { letter-spacing: .02em; text-transform: none; font-size: 10pt; }
 .fnote { float: footnote; font-size: 7.8pt; line-height: 1.42; text-align: left; text-indent: 0; color: #333; hyphens: manual; }
 html[lang=am] .fnote { font-size: 8.4pt; }
 ::footnote-call { content: counter(footnote); vertical-align: super; font-size: 62%; line-height: 0; }
@@ -89,7 +97,7 @@ html[lang=am] .fnote { font-size: 8.4pt; }
 .tbl thead th { background: #f3ecd9; font-weight: bold; }
 .tbl tr { break-inside: avoid; }
 .tbl.wide { table-layout: fixed; font-size: 7.2pt; }
-.end { text-align: center; margin-top: 10mm; color: #7a6a50; }
+.end { text-align: center; margin-top: 6mm; color: #7a6a50; break-before: avoid; }
 .endnote { text-align: center; font-size: 8.6pt; color: #777; margin-top: 8mm; text-indent: 0; }
 """
 
@@ -102,6 +110,8 @@ html { font-family: 'Noto Serif', 'Noto Serif Ethiopic', serif; font-size: 10.4p
 
 ETH_NUM = '፩፪፫፬፭፮፯፰፱'
 SUP = str.maketrans('0123456789', '⁰¹²³⁴⁵⁶⁷⁸⁹')
+BACK_RE = re.compile(r'^(ዋቢ መጻሕፍት|ዋቢ|ማጣቀሻ|Bibliography|References|Sources|Index|ማውጫ ቃላት)\b')
+BIB_RE = re.compile(r'^(ዋቢ መጻሕፍት|ዋቢ|ማጣቀሻ|Bibliography|References|Sources)\b')
 LIST_RE = re.compile(r'^([—–•*✟-]\s|\(\d{1,2}\)\s|([ሀ-ፐ]|[a-z]|\d{1,2}(ኛ)?)[./)]\s?)')
 
 def classify(x, prev_cls):
@@ -135,11 +145,11 @@ def build_html(book, text, cover):
     title, other = (text.get('titleEn') or book.get('titleEn'), book['titleAm']) if en else (book['titleAm'], book.get('titleEn'))
     author = book.get('author') if en else (text.get('authorAm') or book.get('author'))
     # contents anchors: the heading block each entry points at (toc[].b), else the start of its page
-    anchor_at, page_anchor = {}, {}
+    anchor_at, page_anchor, anchor_of = {}, {}, {}        # anchor_of: entries sharing a heading (a chapter and its x.1) share its id
     for k, t in enumerate(toc):
         if t.get('absent'): continue
-        if t.get('b') is not None and t['b'] >= 0 and t['b'] < len(pages[t['page']]['blocks']): anchor_at.setdefault((t['page'], t['b']), f'toc{k}')
-        else: page_anchor.setdefault(t['page'], []).append(f'toc{k}')
+        if t.get('b') is not None and t['b'] >= 0 and t['b'] < len(pages[t['page']]['blocks']): anchor_of[k] = anchor_at.setdefault((t['page'], t['b']), f'toc{k}')
+        else: page_anchor.setdefault(t['page'], []).append(f'toc{k}'); anchor_of[k] = f'toc{k}'
     toc_level = {(t['page'], t['b']): t['level'] for t in toc if t.get('b') is not None and not t.get('absent')}
     front_toc = {k for k, t in enumerate(toc) if not t.get('absent') and k < len(toc) and t['level'] == 1 and k == 0}  # the foreword
     out = [f'<!doctype html><html lang="{"en" if en else "am"}"><head><meta charset="utf-8"><title>{esc(title)}</title>'
@@ -179,7 +189,7 @@ def build_html(book, text, cover):
         is_part = t['level'] == 1 and re.match(r'^(Part|ክፍል)\s', t['title'])
         cls = f'l{t["level"]}{" part" if is_part else ""}{" absent" if t.get("absent") else ""}'
         if t.get('absent'): items.append(f'<li class="{cls}">{esc(t["title"])}</li>')
-        else: items.append(f'<li class="{cls}"><a href="#toc{k}"{" class=\"fr\"" if k in front_toc else ""}>{esc(t["title"])}</a></li>')
+        else: items.append(f'<li class="{cls}"><a href="#{anchor_of.get(k, f'toc{k}')}"{" class=\"fr\"" if k in front_toc else ""}>{esc(t["title"])}</a></li>')
     absent = [t['title'] for t in toc if t.get('absent') and t['level'] == 1]
     absnote = (f'<p class="absnote">{"Entries in grey are missing from the scanned copy: " if en else "በግራጫ የተጻፉት በተቃኘው ቅጂ የሉም፦ "}'
                f'{esc(", ".join(absent))}.</p>') if absent else ''
@@ -222,7 +232,7 @@ def build_html(book, text, cover):
         if header: h += '<thead><tr>' + ''.join(f'<th>{c}</th>' for c in rows[0]) + '</tr></thead>'
         h += '<tbody>' + ''.join('<tr>' + ''.join(f'<td>{c}</td>' for c in r) + '</tr>' for r in rows[1 if header else 0:]) + '</tbody></table>'
         html_out.append(h); open_t = None
-    prev_cls = ''
+    prev_cls, end_done, in_bib = '', False, False
     for idx, (i, k, b) in enumerate(blocks):
         marks = ''.join(f'<a id="{a}"></a>' for a in page_anchor.pop(i, [])) if k == 0 or (i in page_anchor) else ''
         if i == body_start and k == 0 and not html_out[-1:] == ['<!--body-->']: pass
@@ -250,19 +260,27 @@ def build_html(book, text, cover):
             open_t.append(cells); continue
         close_table(); close_para()
         if b['t'] == 'h1':
+            back = bool(BACK_RE.match(b['x']))
+            if back and not end_done: html_out.append('<p class="end">❖ ❖ ❖</p>'); end_done = True
+            in_bib = back and bool(BIB_RE.match(b['x']))
             lab, ttl = split_label(b['x'])
             label = f'<span class="label">{esc(lab)}</span>' if lab else ''
             if re.match(r'^(Part|ክፍል)\s', b['x']):
-                html_out.append(f'<section class="parttitle">{marks}<h2{idattr} data-title="{esc(ttl or lab)}">{label}{esc(ttl)}</h2></section>')
+                html_out.append(f'<section class="parttitle">{marks}<h2{idattr} data-title="{esc(ttl or lab)}" data-bm="{esc(' · '.join(x for x in (lab, ttl) if x))}">{label}{esc(ttl)}</h2></section>')
             else:
-                html_out.append(f'<h2 class="chapter"{idattr} data-title="{esc(ttl or lab)}">{marks}{label}{esc(ttl)}</h2>')
+                html_out.append(f'<h2 class="chapter"{idattr} data-title="{esc(ttl or lab)}" data-bm="{esc(' · '.join(x for x in (lab, ttl) if x))}">{marks}{label}{esc(ttl)}</h2>')
             prev_cls = 'h'; continue
         if b['t'] == 'h2':
             html_out.append(f'<h3 class="{head_level(b["x"], toc_level.get((i, k)))}"{idattr}>{marks}{x}</h3>'); prev_cls = 'h'; continue
         if b['t'] == 'c':
-            cls = 'src' if re.fullmatch(r'\(.*\)', b['x'].strip(), re.S) and len(b['x']) < 220 else 'c'
+            nxt = blocks[idx + 1][2] if idx + 1 < len(blocks) else None
+            if nxt is not None and nxt['t'] == 'h1' and blocks[idx + 1][0] == i and prev_cls in ('h', ''): cls = 'c invoc'   # "በስመ አብ …" over a heading
+            elif prev_cls not in ('h', '', 'c') and (nxt is None or nxt['t'] == 'h1') and len(b['x']) < 60: cls = 'c sig'   # signature ending a section
+            elif re.fullmatch(r'\(.*\)', b['x'].strip(), re.S) and len(b['x']) < 220 and prev_cls not in ('h', ''): cls = 'src'
+            else: cls = 'c'
             html_out.append(f'<p class="{cls}"{idattr}>{marks}{x}</p>'); last_p_end = len(html_out) - 1; prev_cls = cls; continue
         cls = classify(b['x'], prev_cls)
+        if in_bib and cls == 'li': cls = 'li bib'
         para = {'cls': cls, 'id': idattr, 'parts': [marks + x], 'notes': []}; prev_cls = cls or 'p'
     close_table(); close_para()
     # the foreword (front matter, roman folios) goes before <main>; the rest is the body with arabic folios from 1
@@ -280,7 +298,7 @@ def build_html(book, text, cover):
         out.append(f'<main>{body_html}')
     if absent: out.append(f'<p class="endnote">{"The scanned copy ends here; " if en else "የተቃኘው ቅጂ እዚህ ያበቃል፤ "}{esc(", ".join(absent))}'
                           f'{" are not available." if en else " አይገኙም።"}</p>')
-    out.append('<p class="end">❖ ❖ ❖</p></main></body></html>')
+    out.append(('' if end_done else '<p class="end">❖ ❖ ❖</p>') + '</main></body></html>')
     return ''.join(out)
 
 def main():
