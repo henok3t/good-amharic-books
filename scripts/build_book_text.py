@@ -409,6 +409,7 @@ def use_clean_contents(pages, toc, book_id, first_body):
                 if c in label_idx: return label_idx[c]
         return first_body
     out, last = [], first_body
+    taken = set()                     # heading blocks already claimed (a chapter named like its first section)
     max_label = max(label_idx) if label_idx else 0
     for e in entries:
         if max_label and e["page"] > max_label + 2:            # printed after the last scanned page: not in this copy
@@ -416,13 +417,15 @@ def use_clean_contents(pages, toc, book_id, first_body):
             out.append({'title': title, 'level': e['level'], 'page': len(pages) - 1, 'absent': True}); continue
         title = ((f"ምዕራፍ {e['num']}" + (' · ' if e['title'] else '')) if e['level'] == 1 and e.get('num') else (e['num'] + ' ' if e.get('num') else '')) + e['title']
         want = fold(e['title']); guess = max(near(e['page']), last)
+        if e['level'] >= 2 and out and out[-1]['level'] == 1 and out[-1].get('_chap') is not None and fold(out[-1]['_name']) == want:
+            out.append({'title': title, 'level': e['level'], 'page': out[-1]['page'], '_blk': out[-1]['_chap']}); continue   # section named like its chapter
         best = (0, None, None, None); loose = (0, None, None, None)
         window = range(max(first_body, guess - 4), min(len(pages), guess + 5))
         chapter_heads = e['level'] == 1 and e.get('num') and any(b['t'] == 'h1' and b['x'].startswith('ምዕራፍ') for i in window if i >= last for b in pages[i]['blocks'])
         for i in window:
             if i < last: continue
             for k, b in enumerate(pages[i]['blocks']):
-                if b['t'] in ('toc', 'c'): continue
+                if b['t'] in ('toc', 'c') or id(b) in taken: continue
                 if chapter_heads and not (b['t'] == 'h1' and b['x'].startswith('ምዕራፍ')): continue   # chapters: real chapter headings only
                 head = fold(b['x'][:len(e['title']) + 30])
                 if e['level'] == 1 and b['t'] == 'h1':           # chapters come in order: any chapter heading nearby, number preferred
@@ -461,6 +464,7 @@ def use_clean_contents(pages, toc, book_id, first_body):
                 else:
                     pages[i]['blocks'].insert(k, {'t': 'h2', 'x': title})
             out.append({'title': title, 'level': e['level'], 'page': i}); last = i
+            if e['level'] == 1: taken.add(id(b)); out[-1].update(_chap=b, _name=e['title'])
         else:
             idx = max(near(e['page']), last)
             out.append({'title': title, 'level': e['level'], 'page': idx}); last = idx
@@ -607,7 +611,7 @@ def main(book_id, ocr_dir):
         for b in p['blocks']: b.pop('nocont', None); b.pop('forcecont', None)
     for p in pages: p.pop('_lines', None)
     for t in toc:                                        # the heading block each contents entry points at (reader jumps there)
-        blk = t.pop('_blk', None)
+        blk = t.pop('_blk', None); t.pop('_chap', None); t.pop('_name', None)
         if t['page'] >= len(pages) or t.get('absent'): continue
         bl = pages[t['page']]['blocks']
         k = next((k for k, b in enumerate(bl) if b is blk), None) if blk is not None else None
